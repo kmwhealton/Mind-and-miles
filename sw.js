@@ -1,4 +1,4 @@
-const CACHE = "mind-miles-static-1";
+const CACHE = "mind-miles-static-2";
 const LOCAL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const CDN = [
   "https://unpkg.com/react@18.3.1/umd/react.production.min.js",
@@ -9,7 +9,14 @@ self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE).then(async (c) => {
       await c.addAll(LOCAL);
-      await Promise.all(CDN.map((u) => c.add(new Request(u, { mode: "no-cors" })).catch(() => {})));
+      // cache.put accepts opaque cross-origin responses; cache.add does not
+      await Promise.all(
+        CDN.map((u) =>
+          fetch(new Request(u, { mode: "no-cors" }))
+            .then((res) => c.put(u, res))
+            .catch(() => {})
+        )
+      );
     }).then(() => self.skipWaiting())
   );
 });
