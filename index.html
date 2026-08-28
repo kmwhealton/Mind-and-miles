@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260826-163059 -->
+<!-- build 20260828-170240 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -364,6 +364,8 @@ function App() {
 
   // tasks
   const [newTask, setNewTask] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
   const [scan, setScan] = useState(null); // {key, compId, compText, cursor}
   const [newItem, setNewItem] = useState("");
@@ -811,6 +813,27 @@ function App() {
       { id: uid(), text: v, state: "open", dot: null, created: Date.now() },
     ]);
     setNewTask("");
+  };
+  const addBulk = (key) => {
+    const lines = bulkText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    const t0 = Date.now();
+    setTasks(key, [
+      ...(data.tasks[key] || []),
+      ...lines.map((text, i) => ({
+        id: uid() + i.toString(36),
+        text,
+        state: "open",
+        dot: null,
+        created: t0 + i,
+      })),
+    ]);
+    setBulkText("");
+    setBulkOpen(false);
+    ping(`${lines.length} added`);
   };
   const dotTask = (key, id) =>
     setTasks(
@@ -1409,7 +1432,10 @@ function App() {
           <div>
             <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
               <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
-                No task is dotted right now.
+                No task is dotted on the {taskKeyNow === "work" ? "work" : "home"} list right now.
+                {lastDotted(taskKeyNow === "work" ? "home" : "work")
+                  ? ` (The ${taskKeyNow === "work" ? "home" : "work"} list has a dotted task waiting.)`
+                  : ""}
               </p>
               <button
                 onClick={() => setView({ name: "tasks" })}
@@ -1719,6 +1745,7 @@ function App() {
         <div className="flex gap-2 mb-3">
           {["work", "home"].map((k) => {
             const on = activeKey === k;
+            const nOpen = (data.tasks[k] || []).filter((t) => t.state === "open").length;
             return (
               <button
                 key={k}
@@ -1735,7 +1762,7 @@ function App() {
                   fontWeight: 700,
                 }}
               >
-                {k === "work" ? STACK_META.work.label : "AT HOME"}
+                {k === "work" ? STACK_META.work.label : "AT HOME"} ({nOpen})
                 {k === taskKeyNow ? " ◂" : ""}
               </button>
             );
@@ -1809,11 +1836,30 @@ function App() {
         ) : null}
 
         <div className="flex flex-col gap-1">
-          {list.length === 0 && (
-            <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
-              The page is blank. Add the first task below.
-            </p>
-          )}
+          {list.length === 0 &&
+            (() => {
+              const other = activeKey === "work" ? "home" : "work";
+              const otherOpen = taskOpen(other).length;
+              return (
+                <div>
+                  <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+                    This page is blank — nothing has been deleted.
+                    {otherOpen > 0
+                      ? ` The ${other} list holds ${otherOpen} open task${otherOpen === 1 ? "" : "s"}.`
+                      : " Add the first task below."}
+                  </p>
+                  {otherOpen > 0 && (
+                    <button
+                      onClick={() => setTaskView(other)}
+                      className="mt-2"
+                      style={{ ...mono(10, T.ww), background: "transparent" }}
+                    >
+                      SWITCH TO {other === "work" ? "THE WORK LIST" : "THE HOME LIST"} →
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           {list.map((t) => {
             const isLast = last && last.id === t.id;
             return (
@@ -1894,6 +1940,45 @@ function App() {
             ADD
           </button>
         </div>
+        {!bulkOpen ? (
+          <button
+            onClick={() => setBulkOpen(true)}
+            className="mt-2"
+            style={{ ...mono(9), background: "transparent" }}
+          >
+            ADD MANY AT ONCE ▸
+          </button>
+        ) : (
+          <div className="mt-2">
+            <textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              rows={5}
+              placeholder={"One task per line — they'll be added to the end of this list, in order."}
+              className="w-full p-2"
+              style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13.5, outline: "none", resize: "vertical" }}
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => addBulk(activeKey)}
+                className="flex-1 py-2"
+                style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                ADD ALL
+              </button>
+              <button
+                onClick={() => {
+                  setBulkOpen(false);
+                  setBulkText("");
+                }}
+                className="flex-1 py-2"
+                style={{ background: "transparent", color: T.sub, border: `1px solid ${T.lineSoft}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
           Oldest at the top. Scan only when no dots remain; always work the last dot. Made progress
           worth keeping? Re-enter it at the end of the list.
