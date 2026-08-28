@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260828-170240 -->
+<!-- build 20260828-183522 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -206,6 +206,7 @@ const DEFAULTS = {
   dumps: [],
   stacks: { work: DEFAULT_WORK_STACK, off: DEFAULT_OFF_STACK },
   tasks: { work: [], home: [] },
+  medSilent: false,
   stackRev: 2,
 };
 
@@ -482,8 +483,10 @@ function App() {
 
   const chime = () => {
     try {
-      if (navigator.vibrate) navigator.vibrate([200, 120, 200, 120, 500]);
+      if (navigator.vibrate)
+        navigator.vibrate(data.medSilent ? [400, 150, 400, 150, 700] : [200, 120, 200, 120, 500]);
     } catch (e) {}
+    if (data.medSilent) return;
     try {
       const ctx = audioRef.current;
       if (!ctx) return;
@@ -2687,6 +2690,22 @@ function App() {
                   ? "The screen will keep watch."
                   : "Keep the screen awake — a sleeping phone stills the bell."}
               </p>
+              <button
+                onClick={() => commit({ ...data, medSilent: !data.medSilent })}
+                className="mt-3 px-4 py-1"
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.lineSoft}`,
+                  borderRadius: 2,
+                  fontFamily: FONT.body,
+                  fontSize: 9,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                  color: T.sub,
+                }}
+              >
+                END: {data.medSilent ? "VIBRATE ONLY" : "BELL + VIBRATE"} · TAP TO SWITCH
+              </button>
               <button
                 onClick={closeMeditation}
                 className="mt-6 px-5 py-2"
