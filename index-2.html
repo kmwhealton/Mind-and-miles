@@ -1,0 +1,2748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Mind &amp; Miles</title>
+<meta name="theme-color" content="#E7D9AE">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Mind &amp; Miles">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<!-- build 20260828-001336 -->
+<style>
+*,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
+.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
+.items-center{align-items:center}.items-start{align-items:flex-start}.items-end{align-items:flex-end}
+.justify-between{justify-content:space-between}.justify-center{justify-content:center}.justify-end{justify-content:flex-end}
+.gap-1{gap:0.25rem}
+.gap-2{gap:0.5rem}
+.gap-3{gap:0.75rem}
+.px-2{padding-left:0.5rem;padding-right:0.5rem}
+.px-3{padding-left:0.75rem;padding-right:0.75rem}
+.px-4{padding-left:1rem;padding-right:1rem}
+.px-5{padding-left:1.25rem;padding-right:1.25rem}
+.px-8{padding-left:2rem;padding-right:2rem}
+.py-1{padding-top:0.25rem;padding-bottom:0.25rem}
+.py-2{padding-top:0.5rem;padding-bottom:0.5rem}
+.py-3{padding-top:0.75rem;padding-bottom:0.75rem}
+.py-4{padding-top:1rem;padding-bottom:1rem}
+.p-2{padding:0.5rem}
+.p-3{padding:0.75rem}
+.pt-4{padding-top:1rem}
+.pt-6{padding-top:1.5rem}
+.pb-2{padding-bottom:0.5rem}
+.pb-3{padding-bottom:0.75rem}
+.pb-28{padding-bottom:7rem}
+.mb-1{margin-bottom:0.25rem}
+.mb-2{margin-bottom:0.5rem}
+.mb-3{margin-bottom:0.75rem}
+.mb-4{margin-bottom:1rem}
+.mb-5{margin-bottom:1.25rem}
+.mb-6{margin-bottom:1.5rem}
+.mt-1{margin-top:0.25rem}
+.mt-2{margin-top:0.5rem}
+.mt-3{margin-top:0.75rem}
+.mt-5{margin-top:1.25rem}
+.mt-6{margin-top:1.5rem}
+.mt-8{margin-top:2rem}
+.mx-auto{margin-left:auto;margin-right:auto}
+.w-full{width:100%}.w-16{width:4rem}.max-w-md{max-width:28rem}.min-h-screen{min-height:100vh}
+.text-left{text-align:left}.text-center{text-align:center}.text-right{text-align:right}
+.uppercase{text-transform:uppercase}.shrink-0{flex-shrink:0}.inline-block{display:inline-block}
+.fixed{position:fixed}.bottom-0{bottom:0}.left-0{left:0}.right-0{right:0}
+.transition{transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease}
+.active\:translate-y-px:active{transform:translateY(1px)}
+html,body{background:#E7D9AE}
+#boot{display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Georgia,serif;color:#6E5A38;font-style:italic}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"><div id="boot">opening the book…</div></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const localStore = {
+  async get(k) {
+    const v = localStorage.getItem(k);
+    if (v === null) throw new Error("not found");
+    return { key: k, value: v };
+  },
+  async set(k, v) {
+    localStorage.setItem(k, v);
+    return { key: k, value: v };
+  },
+};
+
+
+// ————————————————————————————————————————————————
+// MIND & MILES — A Wanderer's Book of Hours (rev. vii)
+// A gothic-medieval field log for mind states
+// (Wu Wei / Full Mind / NOPE) and miles.
+// Blackletter display, IM Fell text, vellum, rubricated
+// headers, roman numerals. Two Nope stacks: at work
+// (Mon–Fri 4:30a–4:00p) and at home. Chosen by the clock.
+// ————————————————————————————————————————————————
+
+const KEY = "mind_miles_v1"; // unchanged — existing entries carry over
+
+const T = {
+  paper: "#E7D9AE", // vellum
+  panel: "#F0E6C2", // card stock
+  ink: "#2B1D10", // iron-gall ink
+  sub: "#6E5A38", // faded ink
+  line: "#9A7C46", // sepia rule
+  lineSoft: "#C3AE7C", // faint inner rule
+  fm: "#95700E", // gold leaf — Full Mind
+  ww: "#2F5D3F", // verdigris — Wu Wei
+  np: "#7C2018", // blood red — NOPE
+  rubric: "#963A1E", // rubrication for headers
+};
+
+const FONT = {
+  disp: "'Pirata One', 'UnifrakturMaguntia', serif", // blackletter
+  body: "'IM Fell English', Georgia, serif",
+};
+
+// order matters: this is the order on the Now screen
+const STATES = {
+  wuwei: {
+    key: "wuwei",
+    name: "Wu Wei",
+    tag: "clear · fueled · effortless",
+    color: T.ww,
+  },
+  fullmind: {
+    key: "fullmind",
+    name: "Full Mind",
+    tag: "ready to work, but carrying a lot",
+    color: T.fm,
+  },
+  nope: {
+    key: "nope",
+    name: "Nope",
+    tag: "not now. maybe not today.",
+    color: T.np,
+  },
+};
+
+// work hours: Mon–Fri, 4:30a – 4:00p
+const WORK = { startMin: 4 * 60 + 30, endMin: 16 * 60 };
+const isWorkHours = (d = new Date()) => {
+  const day = d.getDay(); // 0 Sun … 6 Sat
+  if (day === 0 || day === 6) return false;
+  const mins = d.getHours() * 60 + d.getMinutes();
+  return mins >= WORK.startMin && mins < WORK.endMin;
+};
+
+// from the handwritten page — during work hours
+const DEFAULT_WORK_STACK = [
+  "Meditate",
+  "Exercise",
+  "Nap",
+  "Organize files",
+  "Call someone",
+  "X (for AI)",
+  "YouTube (for AI)",
+];
+
+// at home — from the handwritten page
+const DEFAULT_OFF_STACK = [
+  "Meditate",
+  "Exercise",
+  "Nap",
+  "Pick up",
+  "Organize the house",
+  "Read a book",
+  "Call someone",
+  "X (for AI)",
+  "YouTube (for AI)",
+  "Big computer game",
+  "YouTube",
+  "Mindless computer game",
+  "Instagram / TikTok",
+  "Beer",
+];
+
+const STACK_META = {
+  work: { label: "AT WORK · M–F 4:30–4" },
+  off: { label: "AT HOME" },
+};
+
+const MED_OPTIONS = [
+  { label: "5 SEC", sec: 5 }, // for testing the bell
+  { label: "5 MIN.", sec: 5 * 60 },
+  { label: "12 MIN.", sec: 12 * 60 },
+  { label: "30 MIN.", sec: 30 * 60 },
+];
+
+const FM_MOVES = [
+  "Meditate",
+  "Name the loudest thing on your mind. Write one next action for it.",
+  "Pick one task. 25 minutes. Everything else waits.",
+  "10 minutes outside, phone stays here.",
+  "4-7-8 breathing, four rounds.",
+];
+
+const WW_MOVES = [
+  "Start the most important thing right now. Deciding costs flow.",
+  "Protect it: phone in the other room, one tab.",
+  "Prime training window — a quality run or OTF lands easy today.",
+];
+
+const OTF_TARGET = 3; // sessions per week
+const OTF_DEFAULT_MILES = 2.5; // treadmill miles in a typical class
+const NOPE_TIMEOUT_MS = 5 * 3600e3; // unlogged time becomes Nope after this
+
+const DEFAULTS = {
+  checkins: [],
+  workouts: [],
+  dumps: [],
+  stacks: { work: DEFAULT_WORK_STACK, off: DEFAULT_OFF_STACK },
+  tasks: { work: [], home: [] },
+  stackRev: 2,
+};
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+const fmtTime = (ts) =>
+  new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+const fmtDay = (ts) => {
+  const d = new Date(ts);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "Today";
+  const y = new Date(Date.now() - 864e5);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+};
+
+const fmtClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+const toLocalInput = (ts) => {
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+const fmtDur = (ms) => {
+  const m = Math.round(ms / 60000);
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (h === 0) return `${mm}m`;
+  return mm === 0 ? `${h}h` : `${h}h ${mm}m`;
+};
+
+const toRoman = (n) => {
+  const map = [
+    [50, "l"],
+    [40, "xl"],
+    [10, "x"],
+    [9, "ix"],
+    [5, "v"],
+    [4, "iv"],
+    [1, "i"],
+  ];
+  let r = "";
+  let x = n;
+  for (const [v, s] of map) {
+    while (x >= v) {
+      r += s;
+      x -= v;
+    }
+  }
+  return r;
+};
+
+const ordinal = (n) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+const mondayOf = (d) => {
+  const dt = new Date(d);
+  const day = (dt.getDay() + 6) % 7;
+  dt.setHours(0, 0, 0, 0);
+  dt.setDate(dt.getDate() - day);
+  return dt;
+};
+
+// small lozenge ornament — the book's recurring mark
+function Blaze({ color, size = 10 }) {
+  return (
+    <span
+      className="inline-block shrink-0"
+      style={{
+        width: size * 0.68,
+        height: size * 0.68,
+        background: color,
+        transform: "rotate(45deg)",
+        margin: size * 0.16,
+      }}
+    />
+  );
+}
+
+// woodcut vignette — a pilgrim on the ridge, a spire beyond
+function Pilgrim({ ink }) {
+  return (
+    <svg viewBox="0 0 320 96" style={{ width: "100%", height: 84, display: "block" }}>
+      {/* sun */}
+      <circle cx="272" cy="20" r="8" fill="none" stroke={ink} strokeWidth="1" opacity="0.5" />
+      <g stroke={ink} strokeWidth="0.8" opacity="0.4">
+        <line x1="272" y1="7" x2="272" y2="3" />
+        <line x1="272" y1="33" x2="272" y2="37" />
+        <line x1="259" y1="20" x2="255" y2="20" />
+        <line x1="285" y1="20" x2="289" y2="20" />
+      </g>
+      {/* far ridge */}
+      <polyline
+        points="0,52 42,36 88,50 138,28 188,46 238,26 286,42 320,34"
+        fill="none"
+        stroke={ink}
+        strokeWidth="1"
+        opacity="0.3"
+      />
+      {/* gothic spire on the far hill */}
+      <g stroke={ink} strokeWidth="1" fill="none" opacity="0.45">
+        <rect x="234" y="14" width="8" height="12" />
+        <polyline points="232,14 238,3 244,14" />
+        <line x1="238" y1="18" x2="238" y2="22" />
+      </g>
+      {/* fog hatching */}
+      <g stroke={ink} strokeWidth="0.8" opacity="0.25">
+        <line x1="18" y1="60" x2="58" y2="60" />
+        <line x1="80" y1="64" x2="132" y2="64" />
+        <line x1="150" y1="58" x2="196" y2="58" />
+        <line x1="216" y1="62" x2="268" y2="62" />
+        <line x1="40" y1="68" x2="96" y2="68" />
+        <line x1="180" y1="68" x2="240" y2="68" />
+      </g>
+      {/* near ridge */}
+      <polyline
+        points="0,86 56,66 108,80 164,54 224,76 276,64 320,72"
+        fill="none"
+        stroke={ink}
+        strokeWidth="1.3"
+        opacity="0.6"
+      />
+      {/* the pilgrim, staff in hand, on the near peak */}
+      <g stroke={ink} strokeWidth="1.4" opacity="0.85">
+        <line x1="164" y1="54" x2="164" y2="42" />
+        <line x1="169" y1="38" x2="169" y2="55" />
+      </g>
+      <circle cx="164" cy="39" r="2.6" fill={ink} opacity="0.85" />
+    </svg>
+  );
+}
+
+function App() {
+  const [data, setData] = useState(DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState({ name: "now" });
+  const [activeCheckin, setActiveCheckin] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [saveErr, setSaveErr] = useState(false);
+  const [needImport, setNeedImport] = useState(false);
+  const [dumpText, setDumpText] = useState("");
+  const [logKind, setLogKind] = useState(null); // 'otf' | 'trail' | null
+  const [otfMin, setOtfMin] = useState("60");
+  const [otfMiles, setOtfMiles] = useState(String(OTF_DEFAULT_MILES));
+  const [runMiles, setRunMiles] = useState("");
+  const [runMin, setRunMin] = useState("");
+  const [logWhen, setLogWhen] = useState("");
+  const [showSafe, setShowSafe] = useState(false);
+  const [expandedDay, setExpandedDay] = useState(null);
+
+  // tasks
+  const [newTask, setNewTask] = useState("");
+  const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
+  const [scan, setScan] = useState(null); // {key, compId, compText, cursor}
+  const [newItem, setNewItem] = useState("");
+
+  // entry editing + history + backup
+  const [editEntry, setEditEntry] = useState(null); // {type, id}
+  const [eMiles, setEMiles] = useState("");
+  const [eMin, setEMin] = useState("");
+  const [eText, setEText] = useState("");
+  const [eState, setEState] = useState("wuwei");
+  const [eTs, setETs] = useState("");
+  const [logLimit, setLogLimit] = useState(30);
+  const [backupText, setBackupText] = useState("");
+
+  // which nope stack is shown/edited; null = follow the clock
+  const [stackView, setStackView] = useState(null); // 'work' | 'off' | null
+  const [editStack, setEditStack] = useState(isWorkHours() ? "work" : "off");
+
+  // meditation timer
+  const [medOpen, setMedOpen] = useState(false);
+  const [medOrigin, setMedOrigin] = useState("nope"); // 'nope' | 'fullmind'
+  const [medTotal, setMedTotal] = useState(0);
+  const [medLeft, setMedLeft] = useState(0);
+  const [medDone, setMedDone] = useState(false);
+  const audioRef = useRef(null);
+  const medEndRef = useRef(0);
+  const wakeLockRef = useRef(null);
+  const [wakeOk, setWakeOk] = useState(false);
+
+  const store = localStore;
+
+  useEffect(() => {
+    (async () => {
+      let found = false;
+      try {
+        if (store) {
+          const res = await store.get(KEY);
+          if (res && res.value) {
+            found = true;
+            const parsed = JSON.parse(res.value);
+            const merged = { ...DEFAULTS, ...parsed };
+            // older OTF entries had no miles — credit the treadmill portion
+            merged.workouts = (merged.workouts || []).map((w) =>
+              w.kind === "otf" && (w.miles === undefined || w.miles === null)
+                ? { ...w, miles: OTF_DEFAULT_MILES }
+                : w
+            );
+            if (!parsed.stacks) {
+              merged.stacks = {
+                work: DEFAULT_WORK_STACK,
+                off: DEFAULT_OFF_STACK,
+              };
+            } else {
+              merged.stacks = {
+                work: parsed.stacks.work || DEFAULT_WORK_STACK,
+                off: parsed.stacks.off || DEFAULT_OFF_STACK,
+              };
+            }
+            // one-time adoption of the handwritten home stack
+            if (!parsed.stackRev || parsed.stackRev < 2) {
+              merged.stacks.off = DEFAULT_OFF_STACK;
+              merged.stackRev = 2;
+            }
+            merged.tasks =
+              parsed.tasks && parsed.tasks.work && parsed.tasks.home
+                ? parsed.tasks
+                : { work: [], home: [] };
+            delete merged.stack;
+            setData(merged);
+          }
+        }
+      } catch (e) {
+        // no saved data yet — start fresh
+      }
+      if (!found && store) setNeedImport(true);
+      setLoaded(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // tick the meditation timer — clock-based, so it survives screen sleep
+  useEffect(() => {
+    if (!medOpen || medDone) return;
+    const tick = () =>
+      setMedLeft(Math.max(0, Math.ceil((medEndRef.current - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 500);
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        tick();
+        requestWake();
+        try {
+          if (audioRef.current && audioRef.current.resume) audioRef.current.resume();
+        } catch (e) {}
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [medOpen, medDone]);
+
+  // finish the meditation timer
+  useEffect(() => {
+    if (medOpen && !medDone && medTotal > 0 && medLeft === 0) {
+      setMedDone(true);
+      chime();
+      releaseWake();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [medLeft, medOpen, medDone, medTotal]);
+
+  const chime = () => {
+    try {
+      if (navigator.vibrate) navigator.vibrate([200, 120, 200, 120, 500]);
+    } catch (e) {}
+    try {
+      const ctx = audioRef.current;
+      if (!ctx) return;
+      if (ctx.state === "suspended" && ctx.resume) ctx.resume();
+      const play = (freq, t0) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = freq;
+        o.connect(g);
+        g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t0);
+        g.gain.exponentialRampToValueAtTime(0.32, ctx.currentTime + t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t0 + 1.8);
+        o.start(ctx.currentTime + t0);
+        o.stop(ctx.currentTime + t0 + 2);
+      };
+      play(523.25, 0);
+      play(659.25, 0.22);
+      play(783.99, 0.44);
+      play(523.25, 1.6);
+      play(659.25, 1.82);
+      play(783.99, 2.04);
+    } catch (e) {
+      // silence is also fine
+    }
+  };
+
+  const requestWake = async () => {
+    try {
+      if (navigator.wakeLock && navigator.wakeLock.request) {
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        setWakeOk(true);
+        if (wakeLockRef.current.addEventListener) {
+          wakeLockRef.current.addEventListener("release", () => setWakeOk(false));
+        }
+      } else {
+        setWakeOk(false);
+      }
+    } catch (e) {
+      setWakeOk(false);
+    }
+  };
+
+  const releaseWake = () => {
+    try {
+      if (wakeLockRef.current && wakeLockRef.current.release) wakeLockRef.current.release();
+    } catch (e) {}
+    wakeLockRef.current = null;
+    setWakeOk(false);
+  };
+
+  const commit = (next) => {
+    setData(next);
+    if (store) {
+      store
+        .set(KEY, JSON.stringify(next))
+        .then(() => {
+          setLastSaved(Date.now());
+          setSaveErr(false);
+        })
+        .catch((e) => {
+          console.error("save failed", e);
+          setSaveErr(true);
+          ping("Save failed");
+        });
+    }
+  };
+
+  const ping = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1600);
+  };
+
+  // ————— actions —————
+  const checkIn = (stateKey) => {
+    const c = { id: uid(), state: stateKey, ts: Date.now(), tried: [] };
+    commit({ ...data, checkins: [c, ...data.checkins] });
+    setActiveCheckin(c.id);
+    setStackView(null); // follow the clock again on a fresh check-in
+    setView({ name: "state", state: stateKey });
+  };
+
+  const markTried = (item) => {
+    if (!activeCheckin) return;
+    commit({
+      ...data,
+      checkins: data.checkins.map((c) =>
+        c.id === activeCheckin && !c.tried.includes(item)
+          ? { ...c, tried: [...c.tried, item] }
+          : c
+      ),
+    });
+  };
+
+  const startMeditation = (seconds, item) => {
+    markTried(item);
+    setMedOrigin(view.state === "fullmind" ? "fullmind" : "nope");
+    try {
+      // create the audio context on the tap so the end-chime is allowed
+      if (!audioRef.current) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioRef.current = new AC();
+      }
+      if (audioRef.current && audioRef.current.state === "suspended") {
+        audioRef.current.resume();
+      }
+    } catch (e) {}
+    setMedTotal(seconds);
+    medEndRef.current = Date.now() + seconds * 1000;
+    setMedLeft(seconds);
+    setMedDone(false);
+    setMedOpen(true);
+    requestWake();
+  };
+
+  const closeMeditation = () => {
+    releaseWake();
+    setMedOpen(false);
+    setMedTotal(0);
+    setMedLeft(0);
+    setMedDone(false);
+  };
+
+  const releaseDump = () => {
+    const text = dumpText.trim();
+    if (!text) return;
+    commit({ ...data, dumps: [{ id: uid(), text, ts: Date.now() }, ...data.dumps] });
+    setDumpText("");
+    ping("Set down");
+  };
+
+  const saveWorkout = () => {
+    const when = logWhen ? new Date(logWhen).getTime() : NaN;
+    const ts = !isNaN(when) ? when : Date.now();
+    if (logKind === "otf") {
+      const m = parseInt(otfMin, 10);
+      const mi = parseFloat(otfMiles);
+      if (!m || m <= 0) return;
+      commit({
+        ...data,
+        workouts: [
+          {
+            id: uid(),
+            kind: "otf",
+            minutes: m,
+            miles: mi > 0 ? mi : 0,
+            ts,
+          },
+          ...data.workouts,
+        ],
+      });
+    } else {
+      const mi = parseFloat(runMiles);
+      if (!mi || mi <= 0) return;
+      const m = parseInt(runMin, 10);
+      commit({
+        ...data,
+        workouts: [
+          { id: uid(), kind: "trail", miles: mi, minutes: m > 0 ? m : null, ts },
+          ...data.workouts,
+        ],
+      });
+    }
+    setLogKind(null);
+    setRunMiles("");
+    setRunMin("");
+    setOtfMin("60");
+    setOtfMiles(String(OTF_DEFAULT_MILES));
+    setLogWhen("");
+    ping("Inscribed");
+  };
+
+  const removeEntry = (type, id) => {
+    if (type === "checkin")
+      commit({ ...data, checkins: data.checkins.filter((c) => c.id !== id) });
+    if (type === "workout")
+      commit({ ...data, workouts: data.workouts.filter((w) => w.id !== id) });
+    if (type === "dump") commit({ ...data, dumps: data.dumps.filter((d) => d.id !== id) });
+  };
+
+  const stackMove = (key, i, dir) => {
+    const s = [...data.stacks[key]];
+    const j = i + dir;
+    if (j < 0 || j >= s.length) return;
+    [s[i], s[j]] = [s[j], s[i]];
+    commit({ ...data, stacks: { ...data.stacks, [key]: s } });
+  };
+
+  const stackRemove = (key, i) => {
+    commit({
+      ...data,
+      stacks: { ...data.stacks, [key]: data.stacks[key].filter((_, k) => k !== i) },
+    });
+  };
+
+  const stackAdd = (key) => {
+    const v = newItem.trim();
+    if (!v) return;
+    commit({ ...data, stacks: { ...data.stacks, [key]: [...data.stacks[key], v] } });
+    setNewItem("");
+  };
+
+  const openEdit = (e) => {
+    setEditEntry({ type: e.type, id: e.id });
+    setETs(toLocalInput(e.ts));
+    if (e.type === "workout") {
+      setEMiles(e.miles != null ? String(e.miles) : "");
+      setEMin(e.minutes != null ? String(e.minutes) : "");
+    }
+    if (e.type === "dump") setEText(e.text || "");
+    if (e.type === "checkin") setEState(e.state);
+  };
+
+  const saveEdit = () => {
+    if (!editEntry) return;
+    const patch = {};
+    const ts = eTs ? new Date(eTs).getTime() : NaN;
+    if (!isNaN(ts)) patch.ts = ts;
+    if (editEntry.type === "workout") {
+      const mi = parseFloat(eMiles);
+      const mn = parseInt(eMin, 10);
+      if (!isNaN(mi) && mi >= 0) patch.miles = mi;
+      if (mn > 0) patch.minutes = mn;
+    }
+    if (editEntry.type === "dump") {
+      const t = eText.trim();
+      if (t) patch.text = t;
+    }
+    if (editEntry.type === "checkin") patch.state = eState;
+    const map = (arr) => arr.map((x) => (x.id === editEntry.id ? { ...x, ...patch } : x));
+    if (editEntry.type === "checkin") commit({ ...data, checkins: map(data.checkins) });
+    if (editEntry.type === "workout") commit({ ...data, workouts: map(data.workouts) });
+    if (editEntry.type === "dump") commit({ ...data, dumps: map(data.dumps) });
+    setEditEntry(null);
+    ping("Amended");
+  };
+
+  const exportBackup = () => {
+    const json = JSON.stringify(data);
+    setBackupText(json);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard
+          .writeText(json)
+          .then(() => ping("Copied"))
+          .catch(() => ping("Backup ready below"));
+      } else {
+        ping("Backup ready below");
+      }
+    } catch (e) {
+      ping("Backup ready below");
+    }
+  };
+
+  const restoreBackup = () => {
+    try {
+      const p = JSON.parse(backupText);
+      // snapshot the current state first, so a bad restore can be undone
+      if (store) {
+        store.set(KEY + "_undo", JSON.stringify(data)).catch(() => {});
+      }
+      const byId = (imported = [], local = []) => {
+        const m = new Map();
+        [...local, ...imported].forEach((x) => x && x.id && m.set(x.id, x));
+        return [...m.values()].sort((a, b) => b.ts - a.ts);
+      };
+      const mergeTasks = (imported, local) => {
+        const imp = Array.isArray(imported) ? imported : [];
+        const loc = Array.isArray(local) ? local : [];
+        const seen = new Set(imp.map((t) => t.id));
+        return [...imp, ...loc.filter((t) => !seen.has(t.id))];
+      };
+      const next = {
+        ...data,
+        checkins: byId(p.checkins, data.checkins),
+        workouts: byId(p.workouts, data.workouts),
+        dumps: byId(p.dumps, data.dumps),
+        stacks: p.stacks && p.stacks.work && p.stacks.off ? p.stacks : data.stacks,
+        tasks: {
+          work: mergeTasks(p.tasks && p.tasks.work, data.tasks.work),
+          home: mergeTasks(p.tasks && p.tasks.home, data.tasks.home),
+        },
+        stackRev: Math.max(data.stackRev || 2, p.stackRev || 2),
+      };
+      commit(next);
+      ping("Restored");
+      setNeedImport(false);
+      setBackupText("");
+      return true;
+    } catch (e) {
+      ping("Bad backup");
+      return false;
+    }
+  };
+
+  const undoRestore = async () => {
+    try {
+      if (!store) return;
+      const res = await store.get(KEY + "_undo");
+      if (res && res.value) {
+        const prev = JSON.parse(res.value);
+        commit({ ...DEFAULTS, ...prev });
+        ping("Recovered");
+      } else {
+        ping("No snapshot");
+      }
+    } catch (e) {
+      ping("No snapshot");
+    }
+  };
+
+  // ————— tasks: dot-scan lists (work / home) —————
+  const taskKeyNow = isWorkHours() ? "work" : "home";
+  const taskOpen = (key) => (data.tasks[key] || []).filter((t) => t.state === "open");
+  const lastDotted = (key) => {
+    const dotted = taskOpen(key).filter((t) => t.dot);
+    if (!dotted.length) return null;
+    return dotted.reduce((a, b) => (b.dot > a.dot ? b : a));
+  };
+  const setTasks = (key, list) => commit({ ...data, tasks: { ...data.tasks, [key]: list } });
+  const addTask = (key) => {
+    const v = newTask.trim();
+    if (!v) return;
+    setTasks(key, [
+      ...(data.tasks[key] || []),
+      { id: uid(), text: v, state: "open", dot: null, created: Date.now() },
+    ]);
+    setNewTask("");
+  };
+  const dotTask = (key, id) =>
+    setTasks(
+      key,
+      (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, dot: Date.now() } : t))
+    );
+  const resolveTask = (key, id, how) => {
+    const list = data.tasks[key] || [];
+    const t = list.find((x) => x.id === id);
+    if (!t) return;
+    let next = list.map((x) =>
+      x.id === id
+        ? { ...x, state: how === "done" ? "done" : "reentered", dot: null, resolved: Date.now() }
+        : x
+    );
+    if (how === "reenter")
+      next = [...next, { id: uid(), text: t.text, state: "open", dot: null, created: Date.now() }];
+    setTasks(key, next);
+    ping(how === "done" ? "Done" : "Re-entered");
+  };
+  const deleteTask = (key, id) =>
+    setTasks(key, (data.tasks[key] || []).filter((t) => t.id !== id));
+  const clearDots = (key) =>
+    setTasks(key, (data.tasks[key] || []).map((t) => ({ ...t, dot: null })));
+  const sweepFinished = (key) =>
+    setTasks(key, (data.tasks[key] || []).filter((t) => t.state === "open"));
+  const startScan = (key) => {
+    const open = taskOpen(key);
+    if (!open.length) return;
+    dotTask(key, open[0].id);
+    if (open.length === 1) {
+      ping("Dotted");
+      return;
+    }
+    setScan({ key, compId: open[0].id, compText: open[0].text, cursor: 1 });
+  };
+  const scanAnswer = (yes) => {
+    if (!scan) return;
+    const open = taskOpen(scan.key);
+    const cand = open[scan.cursor];
+    if (!cand) {
+      setScan(null);
+      return;
+    }
+    let compId = scan.compId;
+    let compText = scan.compText;
+    if (yes) {
+      dotTask(scan.key, cand.id);
+      compId = cand.id;
+      compText = cand.text;
+    }
+    const nextCursor = scan.cursor + 1;
+    if (nextCursor >= open.length) {
+      setScan(null);
+      ping("List scanned");
+    } else {
+      setScan({ key: scan.key, compId, compText, cursor: nextCursor });
+    }
+  };
+
+  // ————— derived —————
+  const now = Date.now();
+  const todayCheckins = data.checkins.filter((c) => fmtDay(c.ts) === "Today");
+  const todayWorkouts = data.workouts.filter((w) => fmtDay(w.ts) === "Today");
+  const todayMiles = todayWorkouts.reduce((a, w) => a + (w.miles || 0), 0);
+
+  const weekStart = mondayOf(new Date()).getTime();
+  const thisWeek = data.workouts.filter((w) => w.ts >= weekStart);
+  const weekMiles = thisWeek.reduce((a, w) => a + (w.miles || 0), 0);
+  const weekRuns = thisWeek.filter((w) => w.kind === "trail").length;
+  const weekOtf = thisWeek.filter((w) => w.kind === "otf").length;
+
+  const lastOtf = data.workouts
+    .filter((w) => w.kind === "otf")
+    .sort((a, b) => b.ts - a.ts)[0];
+  const daysSinceOtf = lastOtf ? Math.floor((now - lastOtf.ts) / 864e5) : null;
+
+  const longest = data.workouts
+    .filter((w) => w.kind === "trail")
+    .reduce((a, w) => Math.max(a, w.miles || 0), 0);
+
+  const weeks = [];
+  const mon = mondayOf(new Date());
+  for (let k = 3; k >= 0; k--) {
+    const s = new Date(mon);
+    s.setDate(s.getDate() - 7 * k);
+    const e = new Date(s);
+    e.setDate(e.getDate() + 7);
+    const mi = data.workouts
+      .filter((w) => w.ts >= s.getTime() && w.ts < e.getTime())
+      .reduce((a, w) => a + (w.miles || 0), 0);
+    weeks.push({ label: `${s.getMonth() + 1}/${s.getDate()}`, mi });
+  }
+  const maxWeek = Math.max(...weeks.map((w) => w.mi), 1);
+
+  // time-in-state: each check-in's state runs until the next check-in,
+  // but after 5 unlogged hours the remainder counts as Nope
+  const stateIntervals = (() => {
+    const cs = [...data.checkins]
+      .filter((c) => STATES[c.state])
+      .sort((a, b) => a.ts - b.ts);
+    const iv = [];
+    for (let i = 0; i < cs.length; i++) {
+      const start = cs[i].ts;
+      const end = i + 1 < cs.length ? cs[i + 1].ts : now;
+      if (end <= start) continue;
+      const capped = Math.min(end, start + NOPE_TIMEOUT_MS);
+      iv.push({ start, end: capped, state: cs[i].state });
+      if (end > capped) iv.push({ start: capped, end, state: "nope" });
+    }
+    return iv;
+  })();
+
+  const dayTallies = (() => {
+    const days = [];
+    for (let k = 0; k < 7; k++) {
+      const d0 = new Date();
+      d0.setHours(0, 0, 0, 0);
+      d0.setDate(d0.getDate() - k);
+      const dayStart = d0.getTime();
+      const dayEnd = dayStart + 864e5;
+      const totals = { wuwei: 0, fullmind: 0, nope: 0 };
+      const segs = [];
+      let cursor = dayStart;
+      stateIntervals
+        .filter((v) => v.end > dayStart && v.start < dayEnd)
+        .forEach((v) => {
+          const s = Math.max(v.start, dayStart);
+          const e = Math.min(v.end, dayEnd);
+          if (e <= s) return;
+          if (s > cursor) segs.push({ len: s - cursor, state: null });
+          segs.push({ len: e - s, state: v.state });
+          totals[v.state] += e - s;
+          cursor = e;
+        });
+      if (cursor < dayEnd) segs.push({ len: dayEnd - cursor, state: null });
+      const label =
+        k === 0
+          ? "Today"
+          : k === 1
+          ? "Yest."
+          : `${d0.toLocaleDateString([], { weekday: "short" })} ${d0.getDate()}`;
+      days.push({ dayStart, label, totals, segs });
+    }
+    return days;
+  })();
+
+  const weekStateTotals = dayTallies.reduce(
+    (a, d) => ({
+      wuwei: a.wuwei + d.totals.wuwei,
+      fullmind: a.fullmind + d.totals.fullmind,
+      nope: a.nope + d.totals.nope,
+    }),
+    { wuwei: 0, fullmind: 0, nope: 0 }
+  );
+
+  const toolTally = {};
+  data.checkins
+    .filter((c) => c.state === "nope")
+    .forEach((c) => (c.tried || []).forEach((t) => (toolTally[t] = (toolTally[t] || 0) + 1)));
+  const topTools = Object.entries(toolTally)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+
+  const timeline = [
+    ...data.checkins.map((c) => ({ ...c, type: "checkin" })),
+    ...data.workouts.map((w) => ({ ...w, type: "workout" })),
+    ...data.dumps.map((d) => ({ ...d, type: "dump" })),
+  ]
+    .sort((a, b) => b.ts - a.ts);
+
+  // full chronicle as a readable markdown journal
+  const buildMarkdown = () => {
+    const lines = [];
+    lines.push("# Mind & Miles — Chronicle");
+    lines.push("");
+    lines.push(`_Exported ${new Date().toLocaleString()}_`);
+    lines.push("");
+    lines.push(
+      `**The quest:** 100 miles in 24 hours · longest run so far: ${longest.toFixed(1)} mi`
+    );
+    lines.push(
+      `**On record:** ${data.checkins.length} check-ins · ${data.workouts.length} sessions · ${data.dumps.length} notes`
+    );
+    lines.push("");
+    const openW = (data.tasks.work || []).filter((t) => t.state === "open");
+    const openH = (data.tasks.home || []).filter((t) => t.state === "open");
+    if (openW.length || openH.length) {
+      lines.push("## Task lists");
+      const dump = (title, arr, key) => {
+        if (!arr.length) return;
+        const lastT = lastDotted(key);
+        lines.push(`### ${title}`);
+        arr.forEach((t) =>
+          lines.push(`- ${t.dot ? (lastT && lastT.id === t.id ? "◆ " : "• ") : ""}${t.text}`)
+        );
+        lines.push("");
+      };
+      dump("At work", openW, "work");
+      dump("At home", openH, "home");
+    }
+    const byDay = new Map();
+    timeline.forEach((e) => {
+      const k = new Date(e.ts).toDateString();
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(e);
+    });
+    [...byDay.entries()].forEach(([day, entries]) => {
+      const d0 = new Date(day);
+      lines.push(
+        `## ${d0.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" })}`
+      );
+      entries
+        .sort((a, b) => a.ts - b.ts)
+        .forEach((e) => {
+          const t = fmtTime(e.ts);
+          if (e.type === "checkin") {
+            const tried = e.tried && e.tried.length ? ` — tried: ${e.tried.join(", ")}` : "";
+            lines.push(`- ${t} · **${STATES[e.state].name}**${tried}`);
+          } else if (e.type === "workout") {
+            lines.push(
+              e.kind === "otf"
+                ? `- ${t} · Orange Theory — ${e.minutes} min, ${(e.miles || 0).toFixed(1)} mi tread`
+                : `- ${t} · Trail run — ${e.miles.toFixed(1)} mi${e.minutes ? `, ${e.minutes} min` : ""}`
+            );
+          } else {
+            lines.push(`- ${t} · Note: ${e.text}`);
+          }
+        });
+      lines.push("");
+    });
+    return lines.join("\n");
+  };
+
+  const copyMd = () => {
+    const md = buildMarkdown();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard
+          .writeText(md)
+          .then(() => ping("Copied"))
+          .catch(() => {
+            setBackupText(md);
+            ping("Markdown in the box");
+          });
+      } else {
+        setBackupText(md);
+        ping("Markdown in the box");
+      }
+    } catch (e) {
+      setBackupText(md);
+      ping("Markdown in the box");
+    }
+  };
+
+  const downloadMd = () => {
+    const md = buildMarkdown();
+    try {
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const dt = new Date();
+      const p = (n) => String(n).padStart(2, "0");
+      a.download = `mind-and-miles-${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      ping("Chronicle exported");
+    } catch (e) {
+      copyMd();
+    }
+  };
+
+  // ————— shared UI bits —————
+  // engraved double-rule frame
+  const card = {
+    background: T.panel,
+    border: `1px solid ${T.line}`,
+    boxShadow: `inset 0 0 0 3px ${T.panel}, inset 0 0 0 4px ${T.lineSoft}`,
+    borderRadius: 2,
+  };
+
+  const mono = (size = 11, color = T.sub) => ({
+    fontFamily: FONT.body,
+    fontSize: size,
+    color,
+    letterSpacing: "0.14em",
+    fontWeight: 600,
+  });
+
+  // rubricated section header
+  const Rubric = ({ children, className = "" }) => (
+    <p className={className} style={{ ...mono(11, T.rubric) }}>
+      ¶ {children}
+    </p>
+  );
+
+  const Rule = ({ className = "" }) => (
+    <div
+      className={className}
+      style={{ borderTop: `1px solid ${T.line}`, borderBottom: `1px solid ${T.line}`, height: 4 }}
+    />
+  );
+
+  const NavBtn = ({ id, label }) => {
+    const active =
+      view.name === id || (id === "now" && (view.name === "state" || view.name === "stack"));
+    return (
+      <button
+        onClick={() => setView({ name: id })}
+        className="flex-1 py-4 uppercase transition"
+        style={{
+          ...mono(11, active ? T.ink : T.sub),
+          borderTop: active ? `2px solid ${T.ink}` : "2px solid transparent",
+          background: "transparent",
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  const BackLink = ({ label = "← check in again", to = { name: "now" } }) => (
+    <button
+      onClick={() => setView(to)}
+      className="mb-4"
+      style={{ ...mono(11), background: "transparent" }}
+    >
+      {label}
+    </button>
+  );
+
+  if (!loaded) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: T.paper }}
+      >
+        <Blaze color={T.ww} size={22} />
+      </div>
+    );
+  }
+
+  // exercise-first callout, shown in FULL MIND and NOPE when nothing is logged today
+  const MoveFirst = () => {
+    if (todayWorkouts.length > 0) return null;
+    let msg;
+    if (daysSinceOtf !== null && daysSinceOtf >= 4) {
+      msg = `${daysSinceOtf} days since OTF — long gaps make the next one harder. Go today if you're able.`;
+    } else if (weekOtf < OTF_TARGET) {
+      msg = `Body willing? Movement is the fastest exit — an OTF session (${weekOtf}/${OTF_TARGET} this week) or easy miles.`;
+    } else {
+      msg = "Body willing? Easy miles reset everything.";
+    }
+    return (
+      <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+        <p style={{ ...mono(10, T.ww) }}>IF YOU CAN MOVE, MOVE</p>
+        <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
+          {msg}
+        </p>
+        <button
+          onClick={() => setView({ name: "train" })}
+          className="mt-2"
+          style={{ ...mono(11, T.ww), background: "transparent" }}
+        >
+          TO TRAINING →
+        </button>
+      </div>
+    );
+  };
+
+  // ————— views —————
+  const NowView = () => (
+    <div>
+      <p className="mb-3 text-center" style={{ ...mono(11) }}>
+        — RIGHT NOW, MY MIND IS —
+      </p>
+      <div className="flex flex-col gap-3">
+        {Object.values(STATES).map((s) => (
+          <button
+            key={s.key}
+            onClick={() => checkIn(s.key)}
+            className="w-full text-left px-5 py-4 transition active:translate-y-px"
+            style={card}
+          >
+            <div className="flex items-center gap-3">
+              <Blaze color={s.color} size={16} />
+              <span
+                style={{
+                  fontFamily: FONT.disp,
+                  fontSize: 36,
+                  lineHeight: 1.05,
+                  color: s.color,
+                }}
+              >
+                {s.name}
+              </span>
+            </div>
+            <div
+              className="mt-1"
+              style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub, paddingLeft: 30 }}
+            >
+              {s.tag}
+            </div>
+          </button>
+        ))}
+      </div>
+      <p className="mt-5 text-center" style={{ ...mono(10) }}>
+        THIS DAY · {todayCheckins.length} {todayCheckins.length === 1 ? "ENTRY" : "ENTRIES"}
+        {todayMiles > 0 ? ` · ${todayMiles.toFixed(1)} MI` : ""}
+        {todayWorkouts.some((w) => w.kind === "otf") ? " · OTF ✓" : ""}
+      </p>
+      <p
+        className="mt-8 text-center"
+        style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}
+      >
+        The aim: dwell in Wu Wei. Pass through Full Mind and Nope quickly.
+      </p>
+    </div>
+  );
+
+  const StateHeader = ({ s, line }) => (
+    <div className="mb-5">
+      <div className="flex items-center gap-3">
+        <Blaze color={s.color} size={20} />
+        <div style={{ fontFamily: FONT.disp, fontSize: 44, color: s.color, lineHeight: 1 }}>
+          {s.name}
+        </div>
+      </div>
+      <p className="mt-2" style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, opacity: 0.9, lineHeight: 1.5 }}>
+        {line}
+      </p>
+    </div>
+  );
+
+  const MoveList = ({ items, color }) => (
+    <div className="flex flex-col gap-2">
+      {items.map((m, i) => {
+        const isMed = /medit/i.test(m);
+        return (
+          <div key={i} className="px-4 py-3" style={card}>
+            <div className="flex gap-3 items-start">
+              <span className="mt-1">
+                <Blaze color={color} size={11} />
+              </span>
+              <span style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>
+                {m}
+              </span>
+            </div>
+            {isMed && (
+              <div className="flex gap-2 mt-2" style={{ paddingLeft: 30 }}>
+                {MED_OPTIONS.map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => startMeditation(o.sec, m)}
+                    className="px-3 py-1 transition active:translate-y-px"
+                    style={{
+                      background: T.paper,
+                      border: `1px solid ${T.ww}`,
+                      borderRadius: 2,
+                      color: T.ww,
+                      fontFamily: FONT.body,
+                      fontSize: 11.5,
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const TransitionBtn = ({ label, to }) => (
+    <button
+      onClick={() => checkIn(to)}
+      className="w-full py-3 mt-3 transition active:translate-y-px"
+      style={{
+        background: STATES[to].color,
+        color: T.panel,
+        border: `1px solid ${T.ink}`,
+        borderRadius: 2,
+        fontFamily: FONT.body,
+        fontSize: 12,
+        letterSpacing: "0.12em",
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const FullMindView = () => (
+    <div>
+      <BackLink />
+      <StateHeader
+        s={STATES.fullmind}
+        line="Logged. Don't force the work — set things down first, then flow."
+      />
+      {MoveFirst()}
+      <div className="px-4 py-4 mb-4" style={card}>
+        <Rubric className="mb-2">SET IT DOWN</Rubric>
+        <textarea
+          value={dumpText}
+          onChange={(e) => setDumpText(e.target.value)}
+          rows={3}
+          placeholder="What's taking up space in your head or heart?"
+          className="w-full p-3"
+          style={{
+            background: T.paper,
+            border: `1px solid ${T.line}`,
+            borderRadius: 2,
+            color: T.ink,
+            fontFamily: FONT.body,
+            fontSize: 14.5,
+            outline: "none",
+            resize: "vertical",
+          }}
+        />
+        <button
+          onClick={releaseDump}
+          className="mt-2 px-4 py-2 transition active:translate-y-px"
+          style={{
+            background: T.panel,
+            border: `1px solid ${T.fm}`,
+            borderRadius: 2,
+            color: T.fm,
+            fontFamily: FONT.body,
+            fontSize: 11,
+            letterSpacing: "0.12em",
+            fontWeight: 700,
+          }}
+        >
+          SET DOWN →
+        </button>
+      </div>
+      <Rubric className="mb-2">THEN ONE OF THESE</Rubric>
+      <MoveList items={FM_MOVES} color={T.fm} />
+      <TransitionBtn label="MIND CLEARED → ENTER WU WEI" to="wuwei" />
+    </div>
+  );
+
+  const WuWeiView = () => {
+    const cur = lastDotted(taskKeyNow);
+    return (
+      <div>
+        <BackLink />
+        <StateHeader s={STATES.wuwei} line="You're in it. Don't spend it deciding — spend it moving." />
+        {cur ? (
+          <div>
+            <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+              <p style={{ ...mono(10, T.ww) }}>
+                THE TASK · {taskKeyNow === "work" ? "AT WORK" : "AT HOME"}
+              </p>
+              <p
+                className="mt-1"
+                style={{ fontFamily: FONT.body, fontSize: 17, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}
+              >
+                {cur.text}
+              </p>
+              <button
+                onClick={() => setView({ name: "tasks" })}
+                className="mt-2"
+                style={{ ...mono(10, T.sub), background: "transparent" }}
+              >
+                OPEN THE LIST →
+              </button>
+            </div>
+            <div className="flex justify-center">
+              <button
+                onClick={() => setView({ name: "train" })}
+                className="px-5 py-2 mt-2"
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.ww}`,
+                  borderRadius: 2,
+                  color: T.ww,
+                  fontFamily: FONT.body,
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                }}
+              >
+                WORKOUT?
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+              <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
+                No task is dotted on the {taskKeyNow === "work" ? "work" : "home"} list right now.
+                {lastDotted(taskKeyNow === "work" ? "home" : "work")
+                  ? ` (The ${taskKeyNow === "work" ? "home" : "work"} list has a dotted task waiting.)`
+                  : ""}
+              </p>
+              <button
+                onClick={() => setView({ name: "tasks" })}
+                className="mt-1"
+                style={{ ...mono(10, T.ww), background: "transparent" }}
+              >
+                SCAN THE TASK LIST →
+              </button>
+            </div>
+            <div className="mb-4 px-4 pt-4 pb-3" style={card}>
+              <Pilgrim ink={T.ink} />
+              <p
+                className="mt-2 text-center"
+                style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 14, color: T.ink, opacity: 0.9 }}
+              >
+                Effortless action isn't no action — it's unblocked action.
+              </p>
+            </div>
+            <MoveList items={WW_MOVES} color={T.ww} />
+            {todayWorkouts.length === 0 && (
+              <button
+                onClick={() => setView({ name: "train" })}
+                className="w-full py-3 mt-3 transition active:translate-y-px"
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.ww}`,
+                  borderRadius: 2,
+                  color: T.ww,
+                  fontFamily: FONT.body,
+                  fontSize: 12,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                }}
+              >
+                {daysSinceOtf !== null && daysSinceOtf >= 4
+                  ? `${daysSinceOtf} DAYS SINCE OTF — TO TRAINING →`
+                  : "NOTHING LOGGED TODAY — TO TRAINING →"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const NopeView = () => {
+    const current = data.checkins.find((c) => c.id === activeCheckin);
+    const tried = current ? current.tried || [] : [];
+    const autoKey = isWorkHours() ? "work" : "off";
+    const activeKey = stackView || autoKey;
+    const stack = data.stacks[activeKey] || [];
+    return (
+      <div>
+        <BackLink />
+        <StateHeader
+          s={STATES.nope}
+          line="Noted, no judgment. Work the stack from the top. Stop the moment something shifts."
+        />
+        {MoveFirst()}
+        <div className="flex items-center justify-between mb-2">
+          <Rubric>THE NOPE STACK</Rubric>
+          <button
+            onClick={() => {
+              setEditStack(activeKey);
+              setView({ name: "stack" });
+            }}
+            style={{ ...mono(11, T.np), background: "transparent" }}
+          >
+            EDIT
+          </button>
+        </div>
+        <div className="flex gap-2 mb-3">
+          {["work", "off"].map((k) => {
+            const on = activeKey === k;
+            return (
+              <button
+                key={k}
+                onClick={() => setStackView(k)}
+                className="px-3 py-1 transition"
+                style={{
+                  background: on ? T.ink : "transparent",
+                  color: on ? T.panel : T.sub,
+                  border: `1px solid ${on ? T.ink : T.lineSoft}`,
+                  borderRadius: 2,
+                  fontFamily: FONT.body,
+                  fontSize: 10,
+                  letterSpacing: "0.1em",
+                  fontWeight: 700,
+                }}
+              >
+                {STACK_META[k].label}
+                {k === autoKey ? " ◂" : ""}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-col gap-2">
+          {stack.map((item, i) => {
+            const done = tried.includes(item);
+            const last = i === stack.length - 1;
+            const isMed = /medit/i.test(item);
+            const isMove = !isMed && /exercis|miles|\brun\b|otf/i.test(item);
+            if (isMed) {
+              return (
+                <div
+                  key={i}
+                  className="px-4 py-3"
+                  style={{ ...card, opacity: done ? 0.55 : 1, borderLeft: `4px solid ${T.np}` }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span style={{ ...mono(12, done ? T.sub : T.np), width: 38, letterSpacing: 0 }}>
+                      {done ? "✓" : `${toRoman(i + 1)}.`}
+                    </span>
+                    <span style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink }}>
+                      {item}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mt-2" style={{ paddingLeft: 50 }}>
+                    {MED_OPTIONS.map((o) => (
+                      <button
+                        key={o.label}
+                        onClick={() => startMeditation(o.sec, item)}
+                        className="px-3 py-1 transition active:translate-y-px"
+                        style={{
+                          background: T.paper,
+                          border: `1px solid ${T.ww}`,
+                          borderRadius: 2,
+                          color: T.ww,
+                          fontFamily: FONT.body,
+                          fontSize: 11.5,
+                          letterSpacing: "0.08em",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            if (isMove) {
+              return (
+                <div
+                  key={i}
+                  className="px-4 py-3"
+                  style={{ ...card, opacity: done ? 0.55 : 1, borderLeft: `4px solid ${T.np}` }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span style={{ ...mono(12, done ? T.sub : T.np), width: 38, letterSpacing: 0 }}>
+                      {done ? "✓" : `${toRoman(i + 1)}.`}
+                    </span>
+                    <span style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink }}>
+                      {item}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mt-2" style={{ paddingLeft: 50 }}>
+                    <button
+                      onClick={() => {
+                        markTried(item);
+                        setView({ name: "train" });
+                      }}
+                      className="px-3 py-1 transition active:translate-y-px"
+                      style={{
+                        background: T.paper,
+                        border: `1px solid ${T.ww}`,
+                        borderRadius: 2,
+                        color: T.ww,
+                        fontFamily: FONT.body,
+                        fontSize: 11.5,
+                        letterSpacing: "0.08em",
+                        fontWeight: 700,
+                      }}
+                    >
+                      TO TRAINING →
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <button
+                key={i}
+                onClick={() => markTried(item)}
+                className="w-full text-left px-4 py-3 flex items-center gap-3 transition active:translate-y-px"
+                style={{
+                  ...card,
+                  opacity: done ? 0.5 : 1,
+                  borderLeft: `4px solid ${last ? T.lineSoft : T.np}`,
+                }}
+              >
+                <span style={{ ...mono(12, done ? T.sub : T.np), width: 38, letterSpacing: 0 }}>
+                  {done ? "✓" : `${toRoman(i + 1)}.`}
+                </span>
+                <span
+                  style={{
+                    fontFamily: FONT.body,
+                    fontSize: 14.5,
+                    color: T.ink,
+                    fontStyle: last ? "italic" : "normal",
+                    textDecoration: done ? "line-through" : "none",
+                  }}
+                >
+                  {item}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: T.sub }}>
+          Tap what you try — the book learns what actually pulls you out.
+        </p>
+        <div className="flex gap-2 mt-3">
+          <TransitionBtn label="→ FULL MIND" to="fullmind" />
+          <TransitionBtn label="→ WU WEI" to="wuwei" />
+        </div>
+      </div>
+    );
+  };
+
+  const StackEditor = () => (
+    <div>
+      <BackLink label="← back to Nope" to={{ name: "state", state: "nope" }} />
+      <p className="mb-1" style={{ fontFamily: FONT.disp, fontSize: 36, color: T.np }}>
+        The Stacks
+      </p>
+      <p className="mb-3" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.sub }}>
+        One stack for working hours (Mon–Fri, 4:30a–4:00p), one for home. Healthiest at the top,
+        last resort at the bottom. "Meditate" gets the timer; exercise items link to Training.
+      </p>
+      <div className="flex gap-2 mb-3">
+        {["work", "off"].map((k) => {
+          const on = editStack === k;
+          return (
+            <button
+              key={k}
+              onClick={() => setEditStack(k)}
+              className="px-3 py-1 transition"
+              style={{
+                background: on ? T.ink : "transparent",
+                color: on ? T.panel : T.sub,
+                border: `1px solid ${on ? T.ink : T.lineSoft}`,
+                borderRadius: 2,
+                fontFamily: FONT.body,
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                fontWeight: 700,
+              }}
+            >
+              {STACK_META[k].label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-2">
+        {(data.stacks[editStack] || []).map((item, i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2" style={card}>
+            <span style={{ ...mono(11, T.np), width: 34, letterSpacing: 0 }}>{toRoman(i + 1)}.</span>
+            <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
+              {item}
+            </span>
+            <button onClick={() => stackMove(editStack, i, -1)} style={{ ...mono(13), background: "transparent", padding: "2px 6px" }}>↑</button>
+            <button onClick={() => stackMove(editStack, i, 1)} style={{ ...mono(13), background: "transparent", padding: "2px 6px" }}>↓</button>
+            <button onClick={() => stackRemove(editStack, i)} style={{ ...mono(13, T.np), background: "transparent", padding: "2px 6px" }}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          placeholder="Add a way out…"
+          className="flex-1 px-3 py-2"
+          style={{
+            background: T.paper,
+            border: `1px solid ${T.line}`,
+            borderRadius: 2,
+            color: T.ink,
+            fontFamily: FONT.body,
+            fontSize: 14,
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={() => stackAdd(editStack)}
+          className="px-4"
+          style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2, ...mono(11, T.ink) }}
+        >
+          ADD
+        </button>
+      </div>
+    </div>
+  );
+
+  const TasksView = () => {
+    const activeKey = taskView || taskKeyNow;
+    const list = data.tasks[activeKey] || [];
+    const open = list.filter((t) => t.state === "open");
+    const last = lastDotted(activeKey);
+    const scanning = scan && scan.key === activeKey;
+    const cand = scanning ? taskOpen(activeKey)[scan.cursor] : null;
+    const hasDots = open.some((t) => t.dot);
+    const hasFinished = list.some((t) => t.state !== "open");
+    return (
+      <div>
+        <Rubric className="mb-2">THE TASK LIST</Rubric>
+        <div className="flex gap-2 mb-3">
+          {["work", "home"].map((k) => {
+            const on = activeKey === k;
+            const nOpen = (data.tasks[k] || []).filter((t) => t.state === "open").length;
+            return (
+              <button
+                key={k}
+                onClick={() => setTaskView(k)}
+                className="px-3 py-1 transition"
+                style={{
+                  background: on ? T.ink : "transparent",
+                  color: on ? T.panel : T.sub,
+                  border: `1px solid ${on ? T.ink : T.lineSoft}`,
+                  borderRadius: 2,
+                  fontFamily: FONT.body,
+                  fontSize: 10,
+                  letterSpacing: "0.1em",
+                  fontWeight: 700,
+                }}
+              >
+                {k === "work" ? STACK_META.work.label : "AT HOME"} ({nOpen})
+                {k === taskKeyNow ? " ◂" : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        {scanning && cand ? (
+          <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+            <p style={{ ...mono(10, T.fm) }}>THE SCAN</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>
+              Do you want to work on <span style={{ fontWeight: 700 }}>{cand.text}</span> more than{" "}
+              <span style={{ fontWeight: 700 }}>{scan.compText}</span>?
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => scanAnswer(true)}
+                className="flex-1 py-2"
+                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                YES — DOT IT
+              </button>
+              <button
+                onClick={() => scanAnswer(false)}
+                className="flex-1 py-2"
+                style={{ background: "transparent", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                NO — PASS
+              </button>
+            </div>
+            <button onClick={() => setScan(null)} className="mt-2" style={{ ...mono(9), background: "transparent" }}>
+              STOP SCANNING
+            </button>
+          </div>
+        ) : last ? (
+          <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+            <p style={{ ...mono(10, T.ww) }}>WORK THE LAST DOT</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+              {last.text}
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => resolveTask(activeKey, last.id, "done")}
+                className="flex-1 py-2"
+                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                DONE ✓
+              </button>
+              <button
+                onClick={() => resolveTask(activeKey, last.id, "reenter")}
+                className="flex-1 py-2"
+                style={{ background: "transparent", color: T.fm, border: `1px solid ${T.fm}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                PROGRESS ↻ RE-ENTER
+              </button>
+            </div>
+          </div>
+        ) : open.length > 0 ? (
+          <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
+            <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
+              No dots on the list. Scan it, oldest first — dot anything you'd rather do than the
+              last thing you dotted.
+            </p>
+            <button
+              onClick={() => startScan(activeKey)}
+              className="w-full py-2 mt-2"
+              style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+            >
+              SCAN THE LIST
+            </button>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-1">
+          {list.length === 0 &&
+            (() => {
+              const other = activeKey === "work" ? "home" : "work";
+              const otherOpen = taskOpen(other).length;
+              return (
+                <div>
+                  <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+                    This page is blank — nothing has been deleted.
+                    {otherOpen > 0
+                      ? ` The ${other} list holds ${otherOpen} open task${otherOpen === 1 ? "" : "s"}.`
+                      : " Add the first task below."}
+                  </p>
+                  {otherOpen > 0 && (
+                    <button
+                      onClick={() => setTaskView(other)}
+                      className="mt-2"
+                      style={{ ...mono(10, T.ww), background: "transparent" }}
+                    >
+                      SWITCH TO {other === "work" ? "THE WORK LIST" : "THE HOME LIST"} →
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          {list.map((t) => {
+            const isLast = last && last.id === t.id;
+            return (
+              <div
+                key={t.id}
+                className="flex items-center gap-2 px-3 py-2"
+                style={{
+                  ...card,
+                  opacity: t.state === "open" ? 1 : 0.55,
+                  borderLeft: isLast ? `4px solid ${T.ww}` : `1px solid ${T.line}`,
+                }}
+              >
+                <span className="shrink-0" style={{ width: 18, textAlign: "center" }}>
+                  {t.state === "done" && (
+                    <span style={{ color: T.ww, fontWeight: 700, fontFamily: FONT.body, fontSize: 13 }}>✓</span>
+                  )}
+                  {t.state === "reentered" && (
+                    <span style={{ color: T.sub, fontFamily: FONT.body, fontSize: 12 }}>↻</span>
+                  )}
+                  {t.state === "open" && t.dot && <Blaze color={isLast ? T.ww : T.ink} size={11} />}
+                </span>
+                <span
+                  className="flex-1"
+                  style={{
+                    fontFamily: FONT.body,
+                    fontSize: 13.5,
+                    color: T.ink,
+                    fontWeight: isLast ? 700 : 400,
+                    textDecoration: t.state === "reentered" ? "line-through" : "none",
+                  }}
+                >
+                  {t.text}
+                </span>
+                <button onClick={() => deleteTask(activeKey, t.id)} style={{ ...mono(11), background: "transparent" }}>
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {(hasDots || hasFinished) && (
+          <div className="flex gap-3 mt-2">
+            {hasDots && (
+              <button onClick={() => clearDots(activeKey)} style={{ ...mono(9), background: "transparent" }}>
+                CLEAR DOTS
+              </button>
+            )}
+            {hasFinished && (
+              <button onClick={() => sweepFinished(activeKey)} style={{ ...mono(9), background: "transparent" }}>
+                SWEEP FINISHED
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-3">
+          <input
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            placeholder="Add a task…"
+            className="flex-1 px-3 py-2"
+            style={{
+              background: T.paper,
+              border: `1px solid ${T.line}`,
+              borderRadius: 2,
+              color: T.ink,
+              fontFamily: FONT.body,
+              fontSize: 14,
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={() => addTask(activeKey)}
+            className="px-4"
+            style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2, ...mono(11, T.ink) }}
+          >
+            ADD
+          </button>
+        </div>
+        <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
+          Oldest at the top. Scan only when no dots remain; always work the last dot. Made progress
+          worth keeping? Re-enter it at the end of the list.
+        </p>
+      </div>
+    );
+  };
+
+  const TrainView = () => (
+    <div>
+      {/* goal */}
+      <div className="px-4 py-4 mb-4" style={card}>
+        <div className="flex items-end justify-between">
+          <div>
+            <Rubric>THE QUEST</Rubric>
+            <p style={{ fontFamily: FONT.disp, fontSize: 34, color: T.ink, lineHeight: 1.1 }}>
+              100 Miles
+            </p>
+            <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub, marginTop: 2 }}>
+              in 24 hours
+            </p>
+          </div>
+          <div className="text-right">
+            <p style={{ ...mono(10) }}>LONGEST RUN</p>
+            <p style={{ fontFamily: FONT.disp, fontSize: 28, color: T.ww }}>
+              {longest.toFixed(1)} <span style={{ fontSize: 17 }}>mi</span>
+            </p>
+          </div>
+        </div>
+        <div
+          className="mt-3 w-full"
+          style={{ height: 10, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 1 }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, (longest / 100) * 100)}%`,
+              height: "100%",
+              background: T.ww,
+              transition: "width .4s ease",
+            }}
+          />
+        </div>
+        <p className="mt-1" style={{ ...mono(9) }}>
+          LONGEST RUN VS 100 MI
+        </p>
+      </div>
+
+      {/* this week */}
+      <div className="flex gap-2 mb-3">
+        {[
+          { label: "MILES / WK", val: weekMiles.toFixed(1) },
+          { label: "TRAIL RUNS", val: weekRuns },
+          { label: "OTF / WK", val: `${weekOtf}/${OTF_TARGET}` },
+        ].map((s, i) => (
+          <div key={i} className="flex-1 px-2 py-3 text-center" style={card}>
+            <p style={{ fontFamily: FONT.disp, fontSize: 25, color: T.ink }}>{s.val}</p>
+            <p style={{ ...mono(8.5) }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* otf rhythm */}
+      <div className="px-4 py-3 mb-4 flex items-center gap-3" style={card}>
+        <div className="flex gap-1 shrink-0">
+          {[0, 1, 2].map((i) => (
+            <Blaze key={i} color={i < weekOtf ? T.fm : T.lineSoft} size={16} />
+          ))}
+        </div>
+        <div className="flex-1">
+          <p style={{ ...mono(10, T.fm) }}>
+            OTF RHYTHM ·{" "}
+            {daysSinceOtf === null
+              ? "NO SESSIONS YET"
+              : daysSinceOtf === 0
+              ? "LAST: TODAY"
+              : `LAST: ${daysSinceOtf}D AGO`}
+          </p>
+          <p
+            style={{
+              fontFamily: FONT.body,
+              fontSize: 12.5,
+              color: daysSinceOtf !== null && daysSinceOtf >= 4 ? T.fm : T.sub,
+              marginTop: 2,
+              lineHeight: 1.45,
+            }}
+          >
+            {daysSinceOtf !== null && daysSinceOtf >= 4
+              ? "Long gap — the next class gets harder every day. Get one in soon."
+              : "Short gaps keep it easier. Build toward 3 a week."}
+          </p>
+        </div>
+      </div>
+
+      {/* quick log */}
+      <Rubric className="mb-2">RECORD A SESSION</Rubric>
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => {
+            setLogKind(logKind === "otf" ? null : "otf");
+            setLogWhen(toLocalInput(Date.now()));
+          }}
+          className="flex-1 py-3 transition active:translate-y-px"
+          style={{
+            ...card,
+            borderColor: logKind === "otf" ? T.fm : T.line,
+            color: T.fm,
+            fontFamily: FONT.body,
+            fontSize: 12,
+            letterSpacing: "0.1em",
+            fontWeight: 700,
+          }}
+        >
+          ORANGE THEORY
+        </button>
+        <button
+          onClick={() => {
+            setLogKind(logKind === "trail" ? null : "trail");
+            setLogWhen(toLocalInput(Date.now()));
+          }}
+          className="flex-1 py-3 transition active:translate-y-px"
+          style={{
+            ...card,
+            borderColor: logKind === "trail" ? T.ww : T.line,
+            color: T.ww,
+            fontFamily: FONT.body,
+            fontSize: 12,
+            letterSpacing: "0.1em",
+            fontWeight: 700,
+          }}
+        >
+          TRAIL RUN
+        </button>
+      </div>
+
+      {logKind && (
+        <div className="px-4 py-4 mb-4" style={card}>
+          {logKind === "otf" ? (
+            <div className="flex items-center gap-3">
+              <label style={{ ...mono(10) }}>MIN.</label>
+              <input
+                value={otfMin}
+                onChange={(e) => setOtfMin(e.target.value)}
+                inputMode="numeric"
+                className="w-16 px-2 py-2 text-center"
+                style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+              />
+              <label style={{ ...mono(10) }}>TREAD MI.</label>
+              <input
+                value={otfMiles}
+                onChange={(e) => setOtfMiles(e.target.value)}
+                inputMode="decimal"
+                className="w-16 px-2 py-2 text-center"
+                style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <label style={{ ...mono(10) }}>MILES</label>
+              <input
+                value={runMiles}
+                onChange={(e) => setRunMiles(e.target.value)}
+                inputMode="decimal"
+                placeholder="6.2"
+                className="w-16 px-2 py-2 text-center"
+                style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+              />
+              <label style={{ ...mono(10) }}>MIN.</label>
+              <input
+                value={runMin}
+                onChange={(e) => setRunMin(e.target.value)}
+                inputMode="numeric"
+                placeholder="opt"
+                className="w-16 px-2 py-2 text-center"
+                style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-3 mt-3">
+            <label style={{ ...mono(10) }}>WHEN</label>
+            <input
+              type="datetime-local"
+              value={logWhen}
+              onChange={(e) => setLogWhen(e.target.value)}
+              className="flex-1 px-2 py-2"
+              style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13, outline: "none" }}
+            />
+          </div>
+          <button
+            onClick={saveWorkout}
+            className="w-full py-3 mt-3 transition active:translate-y-px"
+            style={{
+              background: logKind === "otf" ? T.fm : T.ww,
+              color: T.panel,
+              border: `1px solid ${T.ink}`,
+              borderRadius: 2,
+              fontFamily: FONT.body,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+            }}
+          >
+            INSCRIBE
+          </button>
+        </div>
+      )}
+
+      {/* weekly bars */}
+      <Rubric className="mb-2">MILES · LAST 4 WEEKS · OTF INCLUDED</Rubric>
+      <div className="px-4 pt-4 pb-2 mb-4" style={card}>
+        <div className="flex items-end gap-3" style={{ height: 90 }}>
+          {weeks.map((w, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1" style={{ height: "100%" }}>
+              <span style={{ fontFamily: FONT.body, fontSize: 11, fontWeight: 600, color: T.ink }}>
+                {w.mi > 0 ? w.mi.toFixed(0) : ""}
+              </span>
+              <div
+                className="w-full"
+                style={{
+                  height: `${Math.max(3, (w.mi / maxWeek) * 60)}px`,
+                  background: i === weeks.length - 1 ? T.ww : T.lineSoft,
+                  border: `1px solid ${i === weeks.length - 1 ? T.ww : T.line}`,
+                }}
+              />
+              <span style={{ ...mono(9), letterSpacing: "0.05em" }}>{w.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* recent */}
+      {data.workouts.length > 0 && (
+        <div>
+          <Rubric className="mb-2">OF LATE</Rubric>
+          <div className="flex flex-col gap-2">
+            {data.workouts.slice(0, 5).map((w) => (
+              <div key={w.id} className="flex items-center gap-3 px-4 py-3" style={card}>
+                <Blaze color={w.kind === "otf" ? T.fm : T.ww} size={11} />
+                <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
+                  {w.kind === "otf"
+                    ? `OTF · ${w.minutes} min · ${(w.miles || 0).toFixed(1)} mi`
+                    : `Trail · ${w.miles.toFixed(1)} mi${w.minutes ? ` · ${w.minutes} min` : ""}`}
+                </span>
+                <span style={{ ...mono(9), letterSpacing: "0.05em" }}>{fmtDay(w.ts)}</span>
+                <button
+                  onClick={() => {
+                    openEdit({ ...w, type: "workout" });
+                    setView({ name: "log" });
+                  }}
+                  style={{ ...mono(12, T.rubric), background: "transparent" }}
+                >
+                  ✎
+                </button>
+                <button onClick={() => removeEntry("workout", w.id)} style={{ ...mono(12), background: "transparent" }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const LogView = () => (
+    <div>
+      <Rubric className="mb-2">HOURS BY STATE · 24 A DAY</Rubric>
+      <div className="px-4 py-4 mb-1 flex flex-col gap-2" style={card}>
+        {data.checkins.length === 0 && (
+          <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+            No check-ins yet. Tap a state on the Now page to start the clock.
+          </p>
+        )}
+        {data.checkins.length > 0 &&
+          dayTallies.map((day) => {
+            const open = expandedDay === day.dayStart;
+            return (
+              <div key={day.dayStart}>
+                <button
+                  onClick={() => setExpandedDay(open ? null : day.dayStart)}
+                  className="w-full flex items-center gap-2"
+                  style={{ background: "transparent" }}
+                >
+                  <span style={{ fontFamily: FONT.body, fontSize: 11, fontWeight: 700, color: T.sub, width: 52, textAlign: "left" }}>
+                    {day.label}
+                  </span>
+                  <div
+                    className="flex-1 flex"
+                    style={{ position: "relative", height: 14, background: T.paper, border: `1px solid ${T.lineSoft}`, borderRadius: 1, overflow: "hidden" }}
+                  >
+                    {day.segs.map((sg, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          width: `${(sg.len / 864e5) * 100}%`,
+                          height: "100%",
+                          background: sg.state ? STATES[sg.state].color : "transparent",
+                        }}
+                      />
+                    ))}
+                    {[25, 50, 75].map((p) => (
+                      <div key={p} style={{ position: "absolute", left: `${p}%`, top: 0, bottom: 0, width: 1, background: T.ink, opacity: 0.12 }} />
+                    ))}
+                  </div>
+                </button>
+                {open && (
+                  <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 11.5, color: T.sub, paddingLeft: 60 }}>
+                    <span style={{ color: T.ww, fontWeight: 700 }}>{fmtDur(day.totals.wuwei)}</span> wu wei ·{" "}
+                    <span style={{ color: T.fm, fontWeight: 700 }}>{fmtDur(day.totals.fullmind)}</span> full mind ·{" "}
+                    <span style={{ color: T.np, fontWeight: 700 }}>{fmtDur(day.totals.nope)}</span> nope
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        {data.checkins.length > 0 && (
+          <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 11.5, color: T.ink }}>
+            Week: <span style={{ color: T.ww, fontWeight: 700 }}>{fmtDur(weekStateTotals.wuwei)}</span> wu wei ·{" "}
+            <span style={{ color: T.fm, fontWeight: 700 }}>{fmtDur(weekStateTotals.fullmind)}</span> full mind ·{" "}
+            <span style={{ color: T.np, fontWeight: 700 }}>{fmtDur(weekStateTotals.nope)}</span> nope
+          </p>
+        )}
+      </div>
+      <p className="mb-4" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub }}>
+        A state runs until the next check-in; after 5 unlogged hours it turns to Nope. Blank =
+        before the record began. Tap a day for its tally.
+      </p>
+
+      {topTools.length > 0 && (
+        <div className="mb-4">
+          <Rubric className="mb-2">WHAT PULLS YOU OUT OF NOPE</Rubric>
+          <div className="px-4 py-3 flex flex-col gap-2" style={card}>
+            {topTools.map(([tool, n]) => (
+              <div key={tool} className="flex items-center gap-3">
+                <Blaze color={T.np} size={10} />
+                <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>{tool}</span>
+                <span style={{ ...mono(10), letterSpacing: 0 }}>×{n}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Rubric className="mb-2">THE CHRONICLE</Rubric>
+      <p className="mb-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub }}>
+        {data.checkins.length} check-ins · {data.workouts.length} sessions · {data.dumps.length} notes
+        on record. Nothing auto-deletes — ✕ is the only eraser.
+      </p>
+      <div className="flex flex-col gap-2">
+        {timeline.length === 0 && (
+          <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+            Empty trail so far. Everything you log lands here.
+          </p>
+        )}
+        {timeline.slice(0, logLimit).map((e) => {
+          const isEditing = editEntry && editEntry.type === e.type && editEntry.id === e.id;
+          return (
+            <div key={e.type + e.id} className="px-4 py-3" style={card}>
+              <div className="flex items-start gap-3">
+                <span className="mt-1">
+                  {e.type === "checkin" && <Blaze color={STATES[e.state].color} size={11} />}
+                  {e.type === "workout" && <Blaze color={e.kind === "otf" ? T.fm : T.ww} size={11} />}
+                  {e.type === "dump" && <span style={{ fontFamily: FONT.body, fontSize: 12, color: T.fm }}>❝</span>}
+                </span>
+                <div className="flex-1">
+                  <span style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
+                    {e.type === "checkin" && (
+                      <span style={{ fontWeight: 700, color: STATES[e.state].color }}>
+                        {STATES[e.state].name}
+                      </span>
+                    )}
+                    {e.type === "workout" &&
+                      (e.kind === "otf"
+                        ? `OTF · ${e.minutes} min · ${(e.miles || 0).toFixed(1)} mi`
+                        : `Trail · ${e.miles.toFixed(1)} mi${e.minutes ? ` · ${e.minutes} min` : ""}`)}
+                    {e.type === "dump" && <span style={{ fontStyle: "italic" }}>{e.text}</span>}
+                  </span>
+                  {e.type === "checkin" && e.tried && e.tried.length > 0 && (
+                    <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, marginTop: 2 }}>
+                      tried: {e.tried.join(" · ")}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0" style={{ ...mono(9), letterSpacing: "0.04em" }}>
+                  {fmtDay(e.ts)} {fmtTime(e.ts)}
+                </span>
+                <button
+                  onClick={() => (isEditing ? setEditEntry(null) : openEdit(e))}
+                  className="shrink-0"
+                  style={{ ...mono(11, T.rubric), background: "transparent" }}
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={() => removeEntry(e.type, e.id)}
+                  className="shrink-0"
+                  style={{ ...mono(11), background: "transparent" }}
+                >
+                  ✕
+                </button>
+              </div>
+              {isEditing && (
+                <div
+                  className="mt-3 flex flex-col gap-2"
+                  style={{ borderTop: `1px solid ${T.lineSoft}`, paddingTop: 10 }}
+                >
+                  {e.type === "checkin" && (
+                    <div className="flex gap-2">
+                      {Object.values(STATES).map((s) => (
+                        <button
+                          key={s.key}
+                          onClick={() => setEState(s.key)}
+                          className="px-3 py-1"
+                          style={{
+                            background: eState === s.key ? s.color : "transparent",
+                            color: eState === s.key ? T.panel : s.color,
+                            border: `1px solid ${s.color}`,
+                            borderRadius: 2,
+                            fontFamily: FONT.body,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            letterSpacing: "0.08em",
+                          }}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {e.type === "workout" && (
+                    <div className="flex items-center gap-3">
+                      <label style={{ ...mono(10) }}>MI.</label>
+                      <input
+                        value={eMiles}
+                        onChange={(ev) => setEMiles(ev.target.value)}
+                        inputMode="decimal"
+                        className="w-16 px-2 py-2 text-center"
+                        style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+                      />
+                      <label style={{ ...mono(10) }}>MIN.</label>
+                      <input
+                        value={eMin}
+                        onChange={(ev) => setEMin(ev.target.value)}
+                        inputMode="numeric"
+                        className="w-16 px-2 py-2 text-center"
+                        style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
+                      />
+                    </div>
+                  )}
+                  {e.type === "dump" && (
+                    <textarea
+                      value={eText}
+                      onChange={(ev) => setEText(ev.target.value)}
+                      rows={2}
+                      className="w-full p-2"
+                      style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13.5, outline: "none", resize: "vertical" }}
+                    />
+                  )}
+                  <div className="flex items-center gap-3">
+                    <label style={{ ...mono(10) }}>WHEN</label>
+                    <input
+                      type="datetime-local"
+                      value={eTs}
+                      onChange={(ev) => setETs(ev.target.value)}
+                      className="flex-1 px-2 py-2"
+                      style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13, outline: "none" }}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      className="flex-1 py-2"
+                      style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+                    >
+                      SAVE
+                    </button>
+                    <button
+                      onClick={() => setEditEntry(null)}
+                      className="flex-1 py-2"
+                      style={{ background: "transparent", color: T.sub, border: `1px solid ${T.lineSoft}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {timeline.length > logLimit && (
+          <button
+            onClick={() => setLogLimit(logLimit + 50)}
+            className="w-full py-2"
+            style={{ background: "transparent", border: `1px solid ${T.lineSoft}`, borderRadius: 2, ...mono(10) }}
+          >
+            SHOW EARLIER ENTRIES ({timeline.length - logLimit} MORE)
+          </button>
+        )}
+      </div>
+
+      <div className="mt-5">
+        <button
+          onClick={() => setShowSafe(!showSafe)}
+          className="w-full flex items-center justify-between py-1"
+          style={{ background: "transparent" }}
+        >
+          <span style={{ ...mono(11, T.rubric) }}>¶ SAFEKEEPING · BACKUP &amp; EXPORT</span>
+          <span style={{ ...mono(12, T.rubric) }}>{showSafe ? "▾" : "▸"}</span>
+        </button>
+        {showSafe && (
+        <div className="px-4 py-3 mt-1" style={card}>
+          <p style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.sub, lineHeight: 1.5 }}>
+            Your record lives in this app's storage <span style={{ fontStyle: "italic" }}>where you
+            open it</span> — the chat preview and the published link each keep their own copy. Pick
+            one home, and use a backup to carry entries across or to keep them safe.
+          </p>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={downloadMd}
+              className="flex-1 py-2"
+              style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+            >
+              EXPORT .MD FILE
+            </button>
+            <button
+              onClick={copyMd}
+              className="flex-1 py-2"
+              style={{ background: "transparent", color: T.ww, border: `1px solid ${T.ww}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+            >
+              COPY AS .MD
+            </button>
+          </div>
+          <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
+            The .md is your readable journal — save it to Files, Drive, or a notes app. The box
+            below is the machine backup for restoring.
+          </p>
+          <textarea
+            value={backupText}
+            onChange={(ev) => setBackupText(ev.target.value)}
+            rows={2}
+            placeholder="Backup appears here — or paste one to restore."
+            className="w-full p-2 mt-2"
+            style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 11, outline: "none", resize: "vertical" }}
+          />
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={exportBackup}
+              className="flex-1 py-2"
+              style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+            >
+              COPY BACKUP
+            </button>
+            <button
+              onClick={restoreBackup}
+              className="flex-1 py-2"
+              style={{ background: "transparent", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+            >
+              RESTORE FROM BOX
+            </button>
+          </div>
+          <button onClick={undoRestore} className="mt-2" style={{ ...mono(9), background: "transparent" }}>
+            UNDO LAST RESTORE
+          </button>
+        </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const d = new Date();
+  const dateLine = `${d.toLocaleDateString([], { weekday: "long" })}, the ${ordinal(d.getDate())} day of ${d.toLocaleDateString([], { month: "long" })}`;
+
+  return (
+    <div
+      style={{
+        background: T.paper,
+        backgroundImage: `radial-gradient(ellipse at 50% 0%, rgba(255,246,214,0.6), transparent 55%), radial-gradient(ellipse at 50% 45%, transparent 58%, rgba(74,50,14,0.12) 100%), repeating-linear-gradient(0deg, rgba(74,50,14,0.02) 0px, rgba(74,50,14,0.02) 1px, transparent 1px, transparent 3px)`,
+        minHeight: "100vh",
+        fontFamily: FONT.body,
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Pirata+One&family=IM+Fell+English:ital@0;1&display=swap');
+        * { -webkit-tap-highlight-color: transparent; }
+        input::placeholder, textarea::placeholder { color: #9c8756; font-style: italic; }
+        @keyframes breathe { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.14); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+      `}</style>
+
+      <div className="max-w-md mx-auto px-5 pt-6 pb-28">
+        {/* title page header */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="flex items-center">
+            <Blaze color={T.ww} size={11} />
+            <Blaze color={T.fm} size={11} />
+            <Blaze color={T.np} size={11} />
+          </div>
+          <div style={{ fontFamily: FONT.disp, fontSize: 38, color: T.ink, lineHeight: 1.15, marginTop: 2 }}>
+            Mind &amp; Miles
+          </div>
+          <div style={{ ...mono(9, T.rubric), marginTop: 0 }}>❧ A WANDERER'S BOOK OF HOURS ❧</div>
+          <div className="w-full mt-3">
+            <Rule />
+          </div>
+          <div style={{ ...mono(9), marginTop: 6, letterSpacing: "0.1em" }}>
+            {dateLine.toUpperCase()}
+          </div>
+          <div style={{ ...mono(8), marginTop: 3, color: saveErr ? T.np : T.sub, opacity: 0.85 }}>
+            {saveErr
+              ? "⚠ NOT SAVING — EXPORT A BACKUP FROM THE CHRONICLE"
+              : lastSaved
+              ? `INSCRIBED ${fmtTime(lastSaved)} ✓`
+              : ""}
+          </div>
+        </div>
+
+        {!store && (
+          <div className="px-4 py-2 mb-4" style={{ ...card, borderLeft: `4px solid ${T.rubric}` }}>
+            <p style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.rubric, lineHeight: 1.5 }}>
+              ⚠ Storage is not available here — entries will vanish when this page closes. Open the
+              app inside Claude or via its published link, and keep a backup from the Chronicle.
+            </p>
+          </div>
+        )}
+
+        {needImport && (
+          <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+            <p style={{ ...mono(10, T.fm) }}>NEW COPY · BLANK BOOK</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+              Fresh storage. If you have a backup from a previous copy, paste it here to carry your
+              record over.
+            </p>
+            <textarea
+              value={backupText}
+              onChange={(ev) => setBackupText(ev.target.value)}
+              rows={2}
+              placeholder="Paste backup…"
+              className="w-full p-2 mt-2"
+              style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 11, outline: "none", resize: "vertical" }}
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={restoreBackup}
+                className="flex-1 py-2"
+                style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                RESTORE BACKUP
+              </button>
+              <button
+                onClick={() => setNeedImport(false)}
+                className="flex-1 py-2"
+                style={{ background: "transparent", color: T.sub, border: `1px solid ${T.lineSoft}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                START FRESH
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view.name === "now" && NowView()}
+        {view.name === "tasks" && TasksView()}
+        {view.name === "state" && view.state === "wuwei" && WuWeiView()}
+        {view.name === "state" && view.state === "fullmind" && FullMindView()}
+        {view.name === "state" && view.state === "nope" && NopeView()}
+        {view.name === "stack" && StackEditor()}
+        {view.name === "train" && TrainView()}
+        {view.name === "log" && LogView()}
+      </div>
+
+      {/* meditation overlay */}
+      {medOpen && (
+        <div
+          className="fixed flex flex-col items-center justify-center px-8"
+          style={{
+            inset: 0,
+            background: T.paper,
+            backgroundImage: `radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(74,50,14,0.13) 100%)`,
+            zIndex: 40,
+          }}
+        >
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: 190,
+              height: 190,
+              borderRadius: "50%",
+              border: `1.5px solid ${T.ink}`,
+              boxShadow: `0 0 0 6px ${T.paper}, 0 0 0 7px ${T.line}`,
+              animation: medDone ? "none" : "breathe 8s ease-in-out infinite",
+            }}
+          >
+            <span style={{ fontFamily: FONT.body, fontWeight: 600, fontSize: 42, color: T.ink }}>
+              {fmtClock(medLeft)}
+            </span>
+          </div>
+          {!medDone ? (
+            <div className="flex flex-col items-center">
+              <p
+                className="mt-6 text-center"
+                style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 14, color: T.sub }}
+              >
+                Nothing to do. Nowhere to be.
+              </p>
+              <p
+                className="mt-2 text-center"
+                style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 10.5, color: T.sub, opacity: 0.8 }}
+              >
+                {wakeOk
+                  ? "The screen will keep watch."
+                  : "Keep the screen awake — a sleeping phone stills the bell."}
+              </p>
+              <button
+                onClick={closeMeditation}
+                className="mt-6 px-5 py-2"
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 2,
+                  color: T.sub,
+                  fontFamily: FONT.body,
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                }}
+              >
+                END EARLY
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center w-full" style={{ maxWidth: 320 }}>
+              <p className="mt-6" style={{ ...mono(11, T.ww) }}>
+                TIMER COMPLETE · WHERE ARE YOU NOW?
+              </p>
+              <div className="flex gap-2 mt-3 w-full">
+                <button
+                  onClick={() => {
+                    closeMeditation();
+                    checkIn("wuwei");
+                  }}
+                  className="flex-1 py-3"
+                  style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+                >
+                  → WU WEI
+                </button>
+                {medOrigin === "nope" && (
+                  <button
+                    onClick={() => {
+                      closeMeditation();
+                      checkIn("fullmind");
+                    }}
+                    className="flex-1 py-3"
+                    style={{ background: T.fm, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+                  >
+                    → FULL MIND
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={closeMeditation}
+                className="mt-3 px-5 py-2"
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 2,
+                  color: T.sub,
+                  fontFamily: FONT.body,
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                }}
+              >
+                {medOrigin === "nope"
+                  ? "STILL NOPE — BACK TO THE STACK"
+                  : "STILL FULL MIND — BACK"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* toast */}
+      {toast && (
+        <div
+          className="fixed left-0 right-0 flex justify-center"
+          style={{ bottom: 76, zIndex: 30, pointerEvents: "none" }}
+        >
+          <span
+            className="px-4 py-2"
+            style={{
+              background: T.ink,
+              color: T.panel,
+              borderRadius: 2,
+              fontFamily: FONT.body,
+              fontSize: 11,
+              letterSpacing: "0.14em",
+              fontWeight: 700,
+            }}
+          >
+            {toast.toUpperCase()} ✓
+          </span>
+        </div>
+      )}
+
+      {/* bottom nav */}
+      <div
+        className="fixed bottom-0 left-0 right-0"
+        style={{ background: T.panel, borderTop: `1px solid ${T.line}`, boxShadow: `0 -3px 0 ${T.paper}, 0 -4px 0 ${T.lineSoft}`, zIndex: 20 }}
+      >
+        <div className="max-w-md mx-auto flex">
+          <NavBtn id="now" label="Now" />
+          <NavBtn id="tasks" label="Tasks" />
+          <NavBtn id="train" label="Train" />
+          <NavBtn id="log" label="Chronicle" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
