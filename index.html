@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260828-183522 -->
+<!-- build 20260829-211716 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -206,6 +206,7 @@ const DEFAULTS = {
   dumps: [],
   stacks: { work: DEFAULT_WORK_STACK, off: DEFAULT_OFF_STACK },
   tasks: { work: [], home: [] },
+  taskLog: [],
   medSilent: false,
   stackRev: 2,
 };
@@ -367,6 +368,7 @@ function App() {
   const [newTask, setNewTask] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [shareIn, setShareIn] = useState(null); // text shared into the app
   const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
   const [scan, setScan] = useState(null); // {key, compId, compText, cursor}
   const [newItem, setNewItem] = useState("");
@@ -444,6 +446,22 @@ function App() {
       if (!found && store) setNeedImport(true);
       setLoaded(true);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // handle Android share-target and icon shortcuts
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const v = q.get("view");
+      if (v === "tasks") setView({ name: "tasks" });
+      const shared = [q.get("title"), q.get("text"), q.get("url")]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (shared) setShareIn(shared);
+      if (v || shared) window.history.replaceState({}, "", window.location.pathname);
+    } catch (e) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -666,6 +684,8 @@ function App() {
     if (type === "workout")
       commit({ ...data, workouts: data.workouts.filter((w) => w.id !== id) });
     if (type === "dump") commit({ ...data, dumps: data.dumps.filter((d) => d.id !== id) });
+    if (type === "task")
+      commit({ ...data, taskLog: (data.taskLog || []).filter((x) => x.id !== id) });
   };
 
   const stackMove = (key, i, dir) => {
@@ -697,7 +717,7 @@ function App() {
       setEMiles(e.miles != null ? String(e.miles) : "");
       setEMin(e.minutes != null ? String(e.minutes) : "");
     }
-    if (e.type === "dump") setEText(e.text || "");
+    if (e.type === "dump" || e.type === "task") setEText(e.text || "");
     if (e.type === "checkin") setEState(e.state);
   };
 
@@ -712,7 +732,7 @@ function App() {
       if (!isNaN(mi) && mi >= 0) patch.miles = mi;
       if (mn > 0) patch.minutes = mn;
     }
-    if (editEntry.type === "dump") {
+    if (editEntry.type === "dump" || editEntry.type === "task") {
       const t = eText.trim();
       if (t) patch.text = t;
     }
@@ -721,6 +741,7 @@ function App() {
     if (editEntry.type === "checkin") commit({ ...data, checkins: map(data.checkins) });
     if (editEntry.type === "workout") commit({ ...data, workouts: map(data.workouts) });
     if (editEntry.type === "dump") commit({ ...data, dumps: map(data.dumps) });
+    if (editEntry.type === "task") commit({ ...data, taskLog: map(data.taskLog || []) });
     setEditEntry(null);
     ping("Amended");
   };
@@ -765,6 +786,7 @@ function App() {
         checkins: byId(p.checkins, data.checkins),
         workouts: byId(p.workouts, data.workouts),
         dumps: byId(p.dumps, data.dumps),
+        taskLog: byId(p.taskLog, data.taskLog),
         stacks: p.stacks && p.stacks.work && p.stacks.off ? p.stacks : data.stacks,
         tasks: {
           work: mergeTasks(p.tasks && p.tasks.work, data.tasks.work),
@@ -819,7 +841,7 @@ function App() {
   };
   const addBulk = (key) => {
     const lines = bulkText
-      .split("\n")
+      .split(/\n|;/)
       .map((s) => s.trim())
       .filter(Boolean);
     if (!lines.length) return;
@@ -838,11 +860,36 @@ function App() {
     setBulkOpen(false);
     ping(`${lines.length} added`);
   };
+  const addSharedTask = (key) => {
+    if (!shareIn) return;
+    setTasks(key, [
+      ...(data.tasks[key] || []),
+      { id: uid(), text: shareIn, state: "open", dot: null, created: Date.now() },
+    ]);
+    setShareIn(null);
+    ping(key === "work" ? "Added to work" : "Added to home");
+  };
   const dotTask = (key, id) =>
     setTasks(
       key,
       (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, dot: Date.now() } : t))
     );
+  const toggleDot = (key, id) =>
+    setTasks(
+      key,
+      (data.tasks[key] || []).map((t) =>
+        t.id === id ? { ...t, dot: t.dot ? null : Date.now() } : t
+      )
+    );
+  const reopenTask = (key, id) => {
+    setTasks(
+      key,
+      (data.tasks[key] || []).map((t) =>
+        t.id === id ? { ...t, state: "open", dot: null } : t
+      )
+    );
+    ping("Reopened");
+  };
   const resolveTask = (key, id, how) => {
     const list = data.tasks[key] || [];
     const t = list.find((x) => x.id === id);
@@ -854,7 +901,12 @@ function App() {
     );
     if (how === "reenter")
       next = [...next, { id: uid(), text: t.text, state: "open", dot: null, created: Date.now() }];
-    setTasks(key, next);
+    const entry = { id: uid(), text: t.text, how, list: key, ts: Date.now() };
+    commit({
+      ...data,
+      tasks: { ...data.tasks, [key]: next },
+      taskLog: [entry, ...(data.taskLog || [])],
+    });
     ping(how === "done" ? "Done" : "Re-entered");
   };
   const deleteTask = (key, id) =>
@@ -1005,6 +1057,7 @@ function App() {
     ...data.checkins.map((c) => ({ ...c, type: "checkin" })),
     ...data.workouts.map((w) => ({ ...w, type: "workout" })),
     ...data.dumps.map((d) => ({ ...d, type: "dump" })),
+    ...(data.taskLog || []).map((x) => ({ ...x, type: "task" })),
   ]
     .sort((a, b) => b.ts - a.ts);
 
@@ -1062,6 +1115,8 @@ function App() {
                 ? `- ${t} · Orange Theory — ${e.minutes} min, ${(e.miles || 0).toFixed(1)} mi tread`
                 : `- ${t} · Trail run — ${e.miles.toFixed(1)} mi${e.minutes ? `, ${e.minutes} min` : ""}`
             );
+          } else if (e.type === "task") {
+            lines.push(`- ${t} · ${e.how === "done" ? "✓ Done" : "↻ Progressed"}: ${e.text}`);
           } else {
             lines.push(`- ${t} · Note: ${e.text}`);
           }
@@ -1805,20 +1860,20 @@ function App() {
             <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
               {last.text}
             </p>
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => resolveTask(activeKey, last.id, "done")}
-                className="flex-1 py-2"
-                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
-                DONE ✓
-              </button>
+            <div className="flex gap-2 mt-3 items-center">
               <button
                 onClick={() => resolveTask(activeKey, last.id, "reenter")}
                 className="flex-1 py-2"
                 style={{ background: "transparent", color: T.fm, border: `1px solid ${T.fm}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
               >
                 PROGRESS ↻ RE-ENTER
+              </button>
+              <button
+                onClick={() => resolveTask(activeKey, last.id, "done")}
+                className="px-3 py-2 shrink-0"
+                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em" }}
+              >
+                DONE ✓
               </button>
             </div>
           </div>
@@ -1868,11 +1923,19 @@ function App() {
             return (
               <div
                 key={t.id}
+                onClick={
+                  t.state === "open"
+                    ? () => toggleDot(activeKey, t.id)
+                    : t.state === "done"
+                    ? () => reopenTask(activeKey, t.id)
+                    : undefined
+                }
                 className="flex items-center gap-2 px-3 py-2"
                 style={{
                   ...card,
                   opacity: t.state === "open" ? 1 : 0.55,
                   borderLeft: isLast ? `4px solid ${T.ww}` : `1px solid ${T.line}`,
+                  cursor: t.state === "reentered" ? "default" : "pointer",
                 }}
               >
                 <span className="shrink-0" style={{ width: 18, textAlign: "center" }}>
@@ -1896,7 +1959,13 @@ function App() {
                 >
                   {t.text}
                 </span>
-                <button onClick={() => deleteTask(activeKey, t.id)} style={{ ...mono(11), background: "transparent" }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteTask(activeKey, t.id);
+                  }}
+                  style={{ ...mono(11), background: "transparent" }}
+                >
                   ✕
                 </button>
               </div>
@@ -1983,8 +2052,9 @@ function App() {
           </div>
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          Oldest at the top. Scan only when no dots remain; always work the last dot. Made progress
-          worth keeping? Re-enter it at the end of the list.
+          Oldest at the top. Tap any open task to dot it — a fresh dot becomes the last dot, the one
+          you work; tap again to un-dot. Tapping a ✓ task reopens it. Scan when no dots remain. Made
+          progress worth keeping? Re-enter it at the end of the list.
         </p>
       </div>
     );
@@ -2325,7 +2395,8 @@ function App() {
       <Rubric className="mb-2">THE CHRONICLE</Rubric>
       <p className="mb-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub }}>
         {data.checkins.length} check-ins · {data.workouts.length} sessions · {data.dumps.length} notes
-        on record. Nothing auto-deletes — ✕ is the only eraser.
+        · {(data.taskLog || []).filter((x) => x.how === "done").length} tasks done on record. Nothing
+        auto-deletes — ✕ is the only eraser.
       </p>
       <div className="flex flex-col gap-2">
         {timeline.length === 0 && (
@@ -2342,6 +2413,11 @@ function App() {
                   {e.type === "checkin" && <Blaze color={STATES[e.state].color} size={11} />}
                   {e.type === "workout" && <Blaze color={e.kind === "otf" ? T.fm : T.ww} size={11} />}
                   {e.type === "dump" && <span style={{ fontFamily: FONT.body, fontSize: 12, color: T.fm }}>❝</span>}
+                  {e.type === "task" && (
+                    <span style={{ fontFamily: FONT.body, fontSize: 12, fontWeight: 700, color: e.how === "done" ? T.ww : T.sub }}>
+                      {e.how === "done" ? "✓" : "↻"}
+                    </span>
+                  )}
                 </span>
                 <div className="flex-1">
                   <span style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
@@ -2355,6 +2431,15 @@ function App() {
                         ? `OTF · ${e.minutes} min · ${(e.miles || 0).toFixed(1)} mi`
                         : `Trail · ${e.miles.toFixed(1)} mi${e.minutes ? ` · ${e.minutes} min` : ""}`)}
                     {e.type === "dump" && <span style={{ fontStyle: "italic" }}>{e.text}</span>}
+                    {e.type === "task" && (
+                      <span>
+                        <span style={{ fontWeight: 600 }}>{e.text}</span>
+                        <span style={{ color: T.sub, fontSize: 11.5 }}>
+                          {" "}
+                          · {e.how === "done" ? "done" : "progressed"} · {e.list}
+                        </span>
+                      </span>
+                    )}
                   </span>
                   {e.type === "checkin" && e.tried && e.tried.length > 0 && (
                     <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, marginTop: 2 }}>
@@ -2428,7 +2513,7 @@ function App() {
                       />
                     </div>
                   )}
-                  {e.type === "dump" && (
+                  {(e.type === "dump" || e.type === "task") && (
                     <textarea
                       value={eText}
                       onChange={(ev) => setEText(ev.target.value)}
@@ -2635,6 +2720,38 @@ function App() {
                 START FRESH
               </button>
             </div>
+          </div>
+        )}
+
+        {shareIn && (
+          <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+            <p style={{ ...mono(10, T.fm) }}>SHARED IN</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
+              {shareIn}
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => addSharedTask("work")}
+                className="flex-1 py-2"
+                style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                → WORK LIST
+              </button>
+              <button
+                onClick={() => addSharedTask("home")}
+                className="flex-1 py-2"
+                style={{ background: "transparent", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+              >
+                → HOME LIST
+              </button>
+            </div>
+            <button
+              onClick={() => setShareIn(null)}
+              className="mt-2"
+              style={{ ...mono(9), background: "transparent" }}
+            >
+              DISCARD
+            </button>
           </div>
         )}
 
