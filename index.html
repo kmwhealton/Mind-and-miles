@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260829-211716 -->
+<!-- build 20260901-144115 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -369,6 +369,8 @@ function App() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [shareIn, setShareIn] = useState(null); // text shared into the app
+  const [editTaskId, setEditTaskId] = useState(null);
+  const [editTaskText, setEditTaskText] = useState("");
   const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
   const [scan, setScan] = useState(null); // {key, compId, compText, cursor}
   const [newItem, setNewItem] = useState("");
@@ -825,9 +827,9 @@ function App() {
   const taskKeyNow = isWorkHours() ? "work" : "home";
   const taskOpen = (key) => (data.tasks[key] || []).filter((t) => t.state === "open");
   const lastDotted = (key) => {
+    // the task to work is the lowest dotted task in list order (true FVP)
     const dotted = taskOpen(key).filter((t) => t.dot);
-    if (!dotted.length) return null;
-    return dotted.reduce((a, b) => (b.dot > a.dot ? b : a));
+    return dotted.length ? dotted[dotted.length - 1] : null;
   };
   const setTasks = (key, list) => commit({ ...data, tasks: { ...data.tasks, [key]: list } });
   const addTask = (key) => {
@@ -889,6 +891,16 @@ function App() {
       )
     );
     ping("Reopened");
+  };
+  const saveTaskEdit = (key) => {
+    const v = editTaskText.trim();
+    if (!v || !editTaskId) return;
+    setTasks(
+      key,
+      (data.tasks[key] || []).map((t) => (t.id === editTaskId ? { ...t, text: v } : t))
+    );
+    setEditTaskId(null);
+    ping("Amended");
   };
   const resolveTask = (key, id, how) => {
     const list = data.tasks[key] || [];
@@ -1920,11 +1932,14 @@ function App() {
             })()}
           {list.map((t) => {
             const isLast = last && last.id === t.id;
+            const isEd = editTaskId === t.id;
             return (
               <div
                 key={t.id}
                 onClick={
-                  t.state === "open"
+                  isEd
+                    ? undefined
+                    : t.state === "open"
                     ? () => toggleDot(activeKey, t.id)
                     : t.state === "done"
                     ? () => reopenTask(activeKey, t.id)
@@ -1935,7 +1950,7 @@ function App() {
                   ...card,
                   opacity: t.state === "open" ? 1 : 0.55,
                   borderLeft: isLast ? `4px solid ${T.ww}` : `1px solid ${T.line}`,
-                  cursor: t.state === "reentered" ? "default" : "pointer",
+                  cursor: isEd || t.state === "reentered" ? "default" : "pointer",
                 }}
               >
                 <span className="shrink-0" style={{ width: 18, textAlign: "center" }}>
@@ -1947,27 +1962,79 @@ function App() {
                   )}
                   {t.state === "open" && t.dot && <Blaze color={isLast ? T.ww : T.ink} size={11} />}
                 </span>
-                <span
-                  className="flex-1"
-                  style={{
-                    fontFamily: FONT.body,
-                    fontSize: 13.5,
-                    color: T.ink,
-                    fontWeight: isLast ? 700 : 400,
-                    textDecoration: t.state === "reentered" ? "line-through" : "none",
-                  }}
-                >
-                  {t.text}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteTask(activeKey, t.id);
-                  }}
-                  style={{ ...mono(11), background: "transparent" }}
-                >
-                  ✕
-                </button>
+                {isEd ? (
+                  <input
+                    value={editTaskText}
+                    onChange={(e) => setEditTaskText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveTaskEdit(activeKey);
+                    }}
+                    autoFocus
+                    className="flex-1 px-2 py-1"
+                    style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13.5, outline: "none" }}
+                  />
+                ) : (
+                  <span
+                    className="flex-1"
+                    style={{
+                      fontFamily: FONT.body,
+                      fontSize: 13.5,
+                      color: T.ink,
+                      fontWeight: isLast ? 700 : 400,
+                      textDecoration: t.state === "reentered" ? "line-through" : "none",
+                    }}
+                  >
+                    {t.text}
+                  </span>
+                )}
+                {isEd ? (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        saveTaskEdit(activeKey);
+                      }}
+                      className="shrink-0"
+                      style={{ ...mono(9, T.ww), background: "transparent" }}
+                    >
+                      SAVE
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditTaskId(null);
+                      }}
+                      className="shrink-0"
+                      style={{ ...mono(9), background: "transparent" }}
+                    >
+                      CANCEL
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditTaskId(t.id);
+                        setEditTaskText(t.text);
+                      }}
+                      className="shrink-0"
+                      style={{ ...mono(11, T.rubric), background: "transparent" }}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteTask(activeKey, t.id);
+                      }}
+                      className="shrink-0"
+                      style={{ ...mono(11), background: "transparent" }}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
@@ -2052,9 +2119,9 @@ function App() {
           </div>
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          Oldest at the top. Tap any open task to dot it — a fresh dot becomes the last dot, the one
-          you work; tap again to un-dot. Tapping a ✓ task reopens it. Scan when no dots remain. Made
-          progress worth keeping? Re-enter it at the end of the list.
+          Oldest at the top. Tap any open task to dot it; tap again to un-dot. The lowest dotted
+          task is always the one you work. Tapping a ✓ task reopens it. Scan when no dots remain.
+          Made progress worth keeping? Re-enter it at the end of the list.
         </p>
       </div>
     );
