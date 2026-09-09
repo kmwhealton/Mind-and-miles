@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260901-144115 -->
+<!-- build 20260909-111420 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -132,13 +132,25 @@ const STATES = {
   },
 };
 
-// work hours: Mon–Fri, 4:30a – 4:00p
-const WORK = { startMin: 4 * 60 + 30, endMin: 16 * 60 };
-const isWorkHours = (d = new Date()) => {
+// work hours are settings-driven (defaults: Mon–Fri, 4:30a – 4:00p)
+const DEFAULT_SETTINGS = {
+  workStart: "04:30",
+  workEnd: "16:00",
+  nopeHours: 5,
+  otfTarget: 3,
+  otfMiles: 2.5,
+  impCap: 30,
+  autoOpen: true,
+};
+const isWorkHours = (s = DEFAULT_SETTINGS, d = new Date()) => {
   const day = d.getDay(); // 0 Sun … 6 Sat
   if (day === 0 || day === 6) return false;
+  const parts = (v, fb) => {
+    const m = String(v || fb).split(":");
+    return (Number(m[0]) || 0) * 60 + (Number(m[1]) || 0);
+  };
   const mins = d.getHours() * 60 + d.getMinutes();
-  return mins >= WORK.startMin && mins < WORK.endMin;
+  return mins >= parts(s.workStart, "04:30") && mins < parts(s.workEnd, "16:00");
 };
 
 // from the handwritten page — during work hours
@@ -209,6 +221,9 @@ const DEFAULTS = {
   taskLog: [],
   medSilent: false,
   stackRev: 2,
+  taskRev: 3,
+  settings: DEFAULT_SETTINGS,
+  top3: { work: [], home: [] },
 };
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -371,8 +386,18 @@ function App() {
   const [shareIn, setShareIn] = useState(null); // text shared into the app
   const [editTaskId, setEditTaskId] = useState(null);
   const [editTaskText, setEditTaskText] = useState("");
+  const [editTaskImp, setEditTaskImp] = useState("normal");
+  const [editTaskMind, setEditTaskMind] = useState("fullmind");
+  const [editTaskDate, setEditTaskDate] = useState("");
   const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
-  const [scan, setScan] = useState(null); // {key, compId, compText, cursor}
+  const [cullOpen, setCullOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [qaOpen, setQaOpen] = useState(false);
+  const [qaText, setQaText] = useState("");
+  const [qaImp, setQaImp] = useState("normal");
+  const [qaMind, setQaMind] = useState("fullmind");
+  const [qaList, setQaList] = useState("work");
+  const [qaDate, setQaDate] = useState("");
   const [newItem, setNewItem] = useState("");
 
   // entry editing + history + backup
@@ -401,6 +426,10 @@ function App() {
   const [wakeOk, setWakeOk] = useState(false);
 
   const store = localStore;
+
+  const S = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+  const NOPE_MS = (Number(S.nopeHours) || 5) * 3600e3;
+  const setSetting = (k, v) => commit({ ...data, settings: { ...S, [k]: v } });
 
   useEffect(() => {
     (async () => {
@@ -438,8 +467,39 @@ function App() {
               parsed.tasks && parsed.tasks.work && parsed.tasks.home
                 ? parsed.tasks
                 : { work: [], home: [] };
+            merged.settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
+            merged.top3 =
+              parsed.top3 && parsed.top3.work && parsed.top3.home
+                ? parsed.top3
+                : { work: [], home: [] };
+            if (!parsed.taskRev || parsed.taskRev < 3) {
+              const up = (arr) =>
+                (arr || []).map((t) => ({
+                  imp: "important",
+                  mind: "fullmind",
+                  unsorted: true,
+                  ...t,
+                }));
+              merged.tasks = { work: up(merged.tasks.work), home: up(merged.tasks.home) };
+              merged.taskRev = 3;
+            }
             delete merged.stack;
             setData(merged);
+            try {
+              const st = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
+              const hadQuery = /[?&](view|text|title|url)=/.test(window.location.search || "");
+              if (st.autoOpen !== false && !hadQuery) {
+                const cs = (merged.checkins || [])
+                  .filter((c) => STATES[c.state])
+                  .sort((a, b) => b.ts - a.ts);
+                if (cs.length) {
+                  const timedOut =
+                    Date.now() - cs[0].ts > (Number(st.nopeHours) || 5) * 3600e3;
+                  setActiveCheckin(cs[0].id);
+                  setView({ name: "state", state: timedOut ? "nope" : cs[0].state });
+                }
+              }
+            } catch (e2) {}
           }
         }
       } catch (e) {
@@ -591,11 +651,12 @@ function App() {
   };
 
   const markTried = (item) => {
-    if (!activeCheckin) return;
+    const target = activeCheckin || (data.checkins[0] && data.checkins[0].id);
+    if (!target) return;
     commit({
       ...data,
       checkins: data.checkins.map((c) =>
-        c.id === activeCheckin && !c.tried.includes(item)
+        c.id === target && !c.tried.includes(item)
           ? { ...c, tried: [...c.tried, item] }
           : c
       ),
@@ -675,7 +736,7 @@ function App() {
     setRunMiles("");
     setRunMin("");
     setOtfMin("60");
-    setOtfMiles(String(OTF_DEFAULT_MILES));
+    setOtfMiles(String(S.otfMiles));
     setLogWhen("");
     ping("Inscribed");
   };
@@ -795,6 +856,9 @@ function App() {
           home: mergeTasks(p.tasks && p.tasks.home, data.tasks.home),
         },
         stackRev: Math.max(data.stackRev || 2, p.stackRev || 2),
+        taskRev: Math.max(data.taskRev || 3, p.taskRev || 3),
+        settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}), ...(p.settings || {}) },
+        top3: p.top3 && p.top3.work && p.top3.home ? p.top3 : data.top3,
       };
       commit(next);
       ping("Restored");
@@ -823,143 +887,188 @@ function App() {
     }
   };
 
-  // ————— tasks: dot-scan lists (work / home) —————
-  const taskKeyNow = isWorkHours() ? "work" : "home";
+  // ————— tasks: the deck (work / home) —————
+  const taskKeyNow = isWorkHours(S) ? "work" : "home";
   const taskOpen = (key) => (data.tasks[key] || []).filter((t) => t.state === "open");
-  const lastDotted = (key) => {
-    // the task to work is the lowest dotted task in list order (true FVP)
-    const dotted = taskOpen(key).filter((t) => t.dot);
-    return dotted.length ? dotted[dotted.length - 1] : null;
-  };
   const setTasks = (key, list) => commit({ ...data, tasks: { ...data.tasks, [key]: list } });
-  const addTask = (key) => {
-    const v = newTask.trim();
-    if (!v) return;
-    setTasks(key, [
-      ...(data.tasks[key] || []),
-      { id: uid(), text: v, state: "open", dot: null, created: Date.now() },
-    ]);
-    setNewTask("");
+
+  // ——— the algorithm, in plain words ———
+  // Up to three tasks wait ON DECK. You always work the FRONT one.
+  // Empty deck slots refill themselves, oldest first, from:
+  //   1. urgent tasks (shown in any mental state; importants past their date count as urgent)
+  //   2. important tasks tagged with the current mental state
+  //   3. normal tasks tagged with the current mental state
+  // Resolve the front task (done / later / keep on deck) and the next one steps up.
+  const effImp = (t) =>
+    t.imp === "urgent" || (t.imp === "important" && t.urgentAt && t.urgentAt <= now)
+      ? "urgent"
+      : t.imp === "important"
+      ? "important"
+      : "normal";
+  const importantCount = (key) => taskOpen(key).filter((t) => effImp(t) === "important").length;
+  const unsortedCount = (key) => taskOpen(key).filter((t) => t.unsorted).length;
+  const deckFor = (key, mind) => {
+    const open = taskOpen(key);
+    const pinnedIds = (data.top3 && data.top3[key]) || [];
+    const pinned = pinnedIds.map((id) => open.find((t) => t.id === id)).filter(Boolean);
+    const virtuals = [];
+    if (importantCount(key) > (Number(S.impCap) || 30))
+      virtuals.push({
+        id: "cull:" + key,
+        virtual: "cull",
+        text: "Cull the herd — " + importantCount(key) + " important tasks, cap is " + S.impCap,
+        imp: "important",
+        mind: "fullmind",
+      });
+    if (unsortedCount(key) >= 5)
+      virtuals.push({
+        id: "sort:" + key,
+        virtual: "sort",
+        text: "Sort the tasks — " + unsortedCount(key) + " unsorted",
+        imp: "important",
+        mind: "wuwei",
+      });
+    const candidates = [
+      ...open.filter((t) => effImp(t) === "urgent"),
+      ...virtuals.filter((v) => v.mind === mind),
+      ...open.filter((t) => effImp(t) === "important" && t.mind === mind),
+      ...open.filter((t) => effImp(t) === "normal" && t.mind === mind),
+    ];
+    const deck = [...pinned];
+    for (const c of candidates) {
+      if (deck.length >= 3) break;
+      if (!deck.some((d) => d.id === c.id)) deck.push(c);
+    }
+    return deck;
   };
+  const workTask = (key, mind) => deckFor(key, mind)[0] || null;
+  const pinToggle = (key, id) => {
+    const cur = (data.top3 && data.top3[key]) || [];
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-3);
+    commit({ ...data, top3: { ...data.top3, [key]: next } });
+  };
+  const frontTask = (key, id, mind) => {
+    const rest = deckFor(key, mind)
+      .filter((t) => !t.virtual && t.id !== id)
+      .map((t) => t.id);
+    commit({ ...data, top3: { ...data.top3, [key]: [id, ...rest].slice(0, 3) } });
+  };
+  const keepOnDeck = (key, id, mind) => {
+    const t = (data.tasks[key] || []).find((x) => x.id === id);
+    const others = deckFor(key, mind)
+      .filter((x) => !x.virtual && x.id !== id)
+      .map((x) => x.id);
+    const entry = t ? { id: uid(), text: t.text, how: "keep", list: key, ts: Date.now() } : null;
+    commit({
+      ...data,
+      top3: { ...data.top3, [key]: [...others, id].slice(-3) },
+      taskLog: entry ? [entry, ...(data.taskLog || [])] : data.taskLog,
+    });
+    ping("Kept on deck");
+  };
+  const newTaskObj = (text, imp, mind, urgentAt, unsorted) => ({
+    id: uid(),
+    text,
+    state: "open",
+    imp: imp || "normal",
+    mind: mind || "fullmind",
+    urgentAt: urgentAt || null,
+    unsorted: !!unsorted,
+    created: Date.now(),
+  });
   const addBulk = (key) => {
     const lines = bulkText
       .split(/\n|;/)
       .map((s) => s.trim())
       .filter(Boolean);
     if (!lines.length) return;
-    const t0 = Date.now();
     setTasks(key, [
       ...(data.tasks[key] || []),
       ...lines.map((text, i) => ({
+        ...newTaskObj(text, "normal", mindNow, null, true),
         id: uid() + i.toString(36),
-        text,
-        state: "open",
-        dot: null,
-        created: t0 + i,
       })),
     ]);
     setBulkText("");
     setBulkOpen(false);
-    ping(`${lines.length} added`);
+    ping(lines.length + " added");
   };
   const addSharedTask = (key) => {
     if (!shareIn) return;
-    setTasks(key, [
-      ...(data.tasks[key] || []),
-      { id: uid(), text: shareIn, state: "open", dot: null, created: Date.now() },
-    ]);
+    setTasks(key, [...(data.tasks[key] || []), newTaskObj(shareIn, "normal", mindNow, null, true)]);
     setShareIn(null);
     ping(key === "work" ? "Added to work" : "Added to home");
   };
-  const dotTask = (key, id) =>
-    setTasks(
-      key,
-      (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, dot: Date.now() } : t))
-    );
-  const toggleDot = (key, id) =>
-    setTasks(
-      key,
-      (data.tasks[key] || []).map((t) =>
-        t.id === id ? { ...t, dot: t.dot ? null : Date.now() } : t
-      )
-    );
+  const addQuick = () => {
+    const v = qaText.trim();
+    if (!v) return;
+    const when = qaImp === "important" && qaDate ? new Date(qaDate + "T09:00").getTime() : null;
+    setTasks(qaList, [...(data.tasks[qaList] || []), newTaskObj(v, qaImp, qaMind, when, false)]);
+    setQaText("");
+    setQaDate("");
+    setQaOpen(false);
+    ping("Added");
+  };
   const reopenTask = (key, id) => {
     setTasks(
       key,
-      (data.tasks[key] || []).map((t) =>
-        t.id === id ? { ...t, state: "open", dot: null } : t
-      )
+      (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, state: "open" } : t))
     );
     ping("Reopened");
   };
   const saveTaskEdit = (key) => {
     const v = editTaskText.trim();
     if (!v || !editTaskId) return;
+    const when =
+      editTaskImp === "important" && editTaskDate
+        ? new Date(editTaskDate + "T09:00").getTime()
+        : null;
     setTasks(
       key,
-      (data.tasks[key] || []).map((t) => (t.id === editTaskId ? { ...t, text: v } : t))
+      (data.tasks[key] || []).map((t) =>
+        t.id === editTaskId
+          ? { ...t, text: v, imp: editTaskImp, mind: editTaskMind, urgentAt: when, unsorted: false }
+          : t
+      )
     );
     setEditTaskId(null);
     ping("Amended");
   };
   const resolveTask = (key, id, how) => {
+    // how: 'done' | 'later'
     const list = data.tasks[key] || [];
     const t = list.find((x) => x.id === id);
     if (!t) return;
     let next = list.map((x) =>
-      x.id === id
-        ? { ...x, state: how === "done" ? "done" : "reentered", dot: null, resolved: Date.now() }
-        : x
+      x.id === id ? { ...x, state: how === "done" ? "done" : "reentered", resolved: Date.now() } : x
     );
-    if (how === "reenter")
-      next = [...next, { id: uid(), text: t.text, state: "open", dot: null, created: Date.now() }];
-    const entry = { id: uid(), text: t.text, how, list: key, ts: Date.now() };
+    if (how === "later")
+      next = [...next, { ...t, id: uid(), state: "open", resolved: undefined, created: Date.now() }];
+    const entry = {
+      id: uid(),
+      text: t.text,
+      how: how === "done" ? "done" : "reenter",
+      list: key,
+      ts: Date.now(),
+    };
     commit({
       ...data,
       tasks: { ...data.tasks, [key]: next },
       taskLog: [entry, ...(data.taskLog || [])],
+      top3: { ...data.top3, [key]: ((data.top3 && data.top3[key]) || []).filter((x) => x !== id) },
     });
     ping(how === "done" ? "Done" : "Re-entered");
   };
-  const deleteTask = (key, id) =>
-    setTasks(key, (data.tasks[key] || []).filter((t) => t.id !== id));
-  const clearDots = (key) =>
-    setTasks(key, (data.tasks[key] || []).map((t) => ({ ...t, dot: null })));
+  const deleteTask = (key, id) => setTasks(key, (data.tasks[key] || []).filter((t) => t.id !== id));
+  const demoteTask = (key, id) =>
+    setTasks(key, (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, imp: "normal" } : t)));
+  const sortApply = (key, id, imp, mind) =>
+    setTasks(
+      key,
+      (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, imp, mind, unsorted: false } : t))
+    );
   const sweepFinished = (key) =>
     setTasks(key, (data.tasks[key] || []).filter((t) => t.state === "open"));
-  const startScan = (key) => {
-    const open = taskOpen(key);
-    if (!open.length) return;
-    dotTask(key, open[0].id);
-    if (open.length === 1) {
-      ping("Dotted");
-      return;
-    }
-    setScan({ key, compId: open[0].id, compText: open[0].text, cursor: 1 });
-  };
-  const scanAnswer = (yes) => {
-    if (!scan) return;
-    const open = taskOpen(scan.key);
-    const cand = open[scan.cursor];
-    if (!cand) {
-      setScan(null);
-      return;
-    }
-    let compId = scan.compId;
-    let compText = scan.compText;
-    if (yes) {
-      dotTask(scan.key, cand.id);
-      compId = cand.id;
-      compText = cand.text;
-    }
-    const nextCursor = scan.cursor + 1;
-    if (nextCursor >= open.length) {
-      setScan(null);
-      ping("List scanned");
-    } else {
-      setScan({ key: scan.key, compId, compText, cursor: nextCursor });
-    }
-  };
 
   // ————— derived —————
   const now = Date.now();
@@ -996,6 +1105,19 @@ function App() {
   }
   const maxWeek = Math.max(...weeks.map((w) => w.mi), 1);
 
+  // what state does the book believe you're in right now?
+  const currentState = (() => {
+    const cs = [...data.checkins].filter((c) => STATES[c.state]).sort((a, b) => b.ts - a.ts);
+    if (!cs.length) return null;
+    const lastC = cs[0];
+    const elapsed = now - lastC.ts;
+    if (elapsed > NOPE_MS) {
+      return { key: "nope", since: lastC.ts + NOPE_MS, timedOut: true };
+    }
+    return { key: lastC.state, since: lastC.ts, timedOut: false };
+  })();
+  const mindNow = currentState ? currentState.key : "fullmind";
+
   // time-in-state: each check-in's state runs until the next check-in,
   // but after 5 unlogged hours the remainder counts as Nope
   const stateIntervals = (() => {
@@ -1007,7 +1129,7 @@ function App() {
       const start = cs[i].ts;
       const end = i + 1 < cs.length ? cs[i + 1].ts : now;
       if (end <= start) continue;
-      const capped = Math.min(end, start + NOPE_TIMEOUT_MS);
+      const capped = Math.min(end, start + NOPE_MS);
       iv.push({ start, end: capped, state: cs[i].state });
       if (end > capped) iv.push({ start: capped, end, state: "nope" });
     }
@@ -1091,17 +1213,18 @@ function App() {
     const openH = (data.tasks.home || []).filter((t) => t.state === "open");
     if (openW.length || openH.length) {
       lines.push("## Task lists");
-      const dump = (title, arr, key) => {
+      const dump = (title, arr) => {
         if (!arr.length) return;
-        const lastT = lastDotted(key);
         lines.push(`### ${title}`);
         arr.forEach((t) =>
-          lines.push(`- ${t.dot ? (lastT && lastT.id === t.id ? "◆ " : "• ") : ""}${t.text}`)
+          lines.push(
+            `- ${effImp(t) === "urgent" ? "⚑ " : effImp(t) === "important" ? "◆ " : ""}${t.text}`
+          )
         );
         lines.push("");
       };
-      dump("At work", openW, "work");
-      dump("At home", openH, "home");
+      dump("At work", openW);
+      dump("At home", openH);
     }
     const byDay = new Map();
     timeline.forEach((e) => {
@@ -1196,6 +1319,36 @@ function App() {
     fontWeight: 600,
   });
 
+  const btnInk = { background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" };
+  const btnGhost = { background: "transparent", color: T.sub, border: `1px solid ${T.lineSoft}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" };
+  const btnWw = { background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em" };
+  const btnWwOutline = { background: "transparent", color: T.ww, border: `1px solid ${T.ww}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" };
+  const btnFmOutline = { background: "transparent", color: T.fm, border: `1px solid ${T.fm}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" };
+  const inputS14 = { background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 14, outline: "none" };
+  const inputS13 = { background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13, outline: "none" };
+  const chip = (on, color) => ({
+    background: on ? color || T.ink : "transparent",
+    color: on ? T.panel : T.sub,
+    border: `1px solid ${on ? color || T.ink : T.lineSoft}`,
+    borderRadius: 2,
+    fontFamily: FONT.body,
+    fontSize: 10,
+    letterSpacing: "0.08em",
+    fontWeight: 700,
+  });
+  const mindLetterMap = { wuwei: "W", fullmind: "F", nope: "N" };
+  const tierGlyph = (t) => {
+    const e = effImp(t);
+    return e === "urgent" ? (
+      <span style={{ fontFamily: FONT.body, fontSize: 12, fontWeight: 700, color: T.np }}>⚑</span>
+    ) : e === "important" ? (
+      <Blaze color={T.fm} size={10} />
+    ) : (
+      <span style={{ fontFamily: FONT.body, fontSize: 13, color: T.line }}>·</span>
+    );
+  };
+
+
   // rubricated section header
   const Rubric = ({ children, className = "" }) => (
     <p className={className} style={{ ...mono(11, T.rubric) }}>
@@ -1212,7 +1365,9 @@ function App() {
 
   const NavBtn = ({ id, label }) => {
     const active =
-      view.name === id || (id === "now" && (view.name === "state" || view.name === "stack"));
+      view.name === id ||
+      (id === "now" && (view.name === "state" || view.name === "stack")) ||
+      (id === "more" && ["more", "train", "log", "settings"].includes(view.name));
     return (
       <button
         onClick={() => setView({ name: id })}
@@ -1255,8 +1410,8 @@ function App() {
     let msg;
     if (daysSinceOtf !== null && daysSinceOtf >= 4) {
       msg = `${daysSinceOtf} days since OTF — long gaps make the next one harder. Go today if you're able.`;
-    } else if (weekOtf < OTF_TARGET) {
-      msg = `Body willing? Movement is the fastest exit — an OTF session (${weekOtf}/${OTF_TARGET} this week) or easy miles.`;
+    } else if (weekOtf < (Number(S.otfTarget) || 3)) {
+      msg = `Body willing? Movement is the fastest exit — an OTF session (${weekOtf}/${S.otfTarget} this week) or easy miles.`;
     } else {
       msg = "Body willing? Easy miles reset everything.";
     }
@@ -1280,6 +1435,31 @@ function App() {
   // ————— views —————
   const NowView = () => (
     <div>
+      {currentState ? (
+        <div
+          className="px-4 py-3 mb-4 flex items-center gap-3"
+          style={{ ...card, borderLeft: `4px solid ${STATES[currentState.key].color}` }}
+        >
+          <Blaze color={STATES[currentState.key].color} size={16} />
+          <div className="flex-1">
+            <p style={{ ...mono(10, STATES[currentState.key].color) }}>
+              THE BOOK HAS YOU IN {STATES[currentState.key].name.toUpperCase()}
+            </p>
+            <p style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.sub, marginTop: 2, lineHeight: 1.45 }}>
+              {currentState.timedOut
+                ? `Unlogged past ${S.nopeHours} hours, so it turned to Nope at ${fmtTime(currentState.since)}. Check in below to claim the hours.`
+                : `Since ${fmtDay(currentState.since) === "Today" ? "" : fmtDay(currentState.since) + ", "}${fmtTime(currentState.since)} · ${fmtDur(now - currentState.since)} and counting.`}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p
+          className="mb-3 text-center"
+          style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: T.sub }}
+        >
+          No state on record yet — your first check-in starts the clock.
+        </p>
+      )}
       <p className="mb-3 text-center" style={{ ...mono(11) }}>
         — RIGHT NOW, MY MIND IS —
       </p>
@@ -1411,6 +1591,22 @@ function App() {
         line="Logged. Don't force the work — set things down first, then flow."
       />
       {MoveFirst()}
+      {(() => {
+        const ft = workTask(taskKeyNow, "fullmind");
+        return ft ? (
+          <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+            <p style={{ ...mono(10, T.fm) }}>
+              THE TASK · {taskKeyNow === "work" ? "AT WORK" : "AT HOME"}
+            </p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 15.5, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+              {ft.text}
+            </p>
+            <button onClick={() => setView({ name: "tasks" })} className="mt-1" style={{ ...mono(10, T.sub), background: "transparent" }}>
+              OPEN THE TASKS →
+            </button>
+          </div>
+        ) : null;
+      })()}
       <div className="px-4 py-4 mb-4" style={card}>
         <Rubric className="mb-2">SET IT DOWN</Rubric>
         <textarea
@@ -1454,7 +1650,7 @@ function App() {
   );
 
   const WuWeiView = () => {
-    const cur = lastDotted(taskKeyNow);
+    const cur = workTask(taskKeyNow, "wuwei");
     return (
       <div>
         <BackLink />
@@ -1502,17 +1698,14 @@ function App() {
           <div>
             <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
               <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
-                No task is dotted on the {taskKeyNow === "work" ? "work" : "home"} list right now.
-                {lastDotted(taskKeyNow === "work" ? "home" : "work")
-                  ? ` (The ${taskKeyNow === "work" ? "home" : "work"} list has a dotted task waiting.)`
-                  : ""}
+                Nothing on deck for Wu Wei on the {taskKeyNow === "work" ? "work" : "home"} list.
               </p>
               <button
                 onClick={() => setView({ name: "tasks" })}
                 className="mt-1"
                 style={{ ...mono(10, T.ww), background: "transparent" }}
               >
-                SCAN THE TASK LIST →
+                OPEN THE TASKS →
               </button>
             </div>
             <div className="mb-4 px-4 pt-4 pb-3" style={card}>
@@ -1554,7 +1747,7 @@ function App() {
   const NopeView = () => {
     const current = data.checkins.find((c) => c.id === activeCheckin);
     const tried = current ? current.tried || [] : [];
-    const autoKey = isWorkHours() ? "work" : "off";
+    const autoKey = isWorkHours(S) ? "work" : "off";
     const activeKey = stackView || autoKey;
     const stack = data.stacks[activeKey] || [];
     return (
@@ -1565,6 +1758,20 @@ function App() {
           line="Noted, no judgment. Work the stack from the top. Stop the moment something shifts."
         />
         {MoveFirst()}
+        {(() => {
+          const u = taskOpen(taskKeyNow).filter((t) => effImp(t) === "urgent")[0];
+          return u ? (
+            <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
+              <p style={{ ...mono(10, T.np) }}>⚑ URGENT — EVEN IN NOPE</p>
+              <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: 600, color: T.ink }}>
+                {u.text}
+              </p>
+              <button onClick={() => setView({ name: "tasks" })} className="mt-1" style={{ ...mono(10, T.np), background: "transparent" }}>
+                OPEN THE TASKS →
+              </button>
+            </div>
+          ) : null;
+        })()}
         <div className="flex items-center justify-between mb-2">
           <Rubric>THE NOPE STACK</Rubric>
           <button
@@ -1804,11 +2011,13 @@ function App() {
     const activeKey = taskView || taskKeyNow;
     const list = data.tasks[activeKey] || [];
     const open = list.filter((t) => t.state === "open");
-    const last = lastDotted(activeKey);
-    const scanning = scan && scan.key === activeKey;
-    const cand = scanning ? taskOpen(activeKey)[scan.cursor] : null;
-    const hasDots = open.some((t) => t.dot);
+    const deck = deckFor(activeKey, mindNow);
+    const front = deck[0] || null;
     const hasFinished = list.some((t) => t.state !== "open");
+    const pinnedIds = (data.top3 && data.top3[activeKey]) || [];
+    const unsortedList = open.filter((t) => t.unsorted);
+    const importants = open.filter((t) => effImp(t) === "important");
+    const overCap = importants.length - (Number(S.impCap) || 30);
     return (
       <div>
         <Rubric className="mb-2">THE TASK LIST</Rubric>
@@ -1816,122 +2025,146 @@ function App() {
           {["work", "home"].map((k) => {
             const on = activeKey === k;
             const nOpen = (data.tasks[k] || []).filter((t) => t.state === "open").length;
+            const nUrg = (data.tasks[k] || []).filter(
+              (t) => t.state === "open" && effImp(t) === "urgent"
+            ).length;
             return (
-              <button
-                key={k}
-                onClick={() => setTaskView(k)}
-                className="px-3 py-1 transition"
-                style={{
-                  background: on ? T.ink : "transparent",
-                  color: on ? T.panel : T.sub,
-                  border: `1px solid ${on ? T.ink : T.lineSoft}`,
-                  borderRadius: 2,
-                  fontFamily: FONT.body,
-                  fontSize: 10,
-                  letterSpacing: "0.1em",
-                  fontWeight: 700,
-                }}
-              >
-                {k === "work" ? STACK_META.work.label : "AT HOME"} ({nOpen})
+              <button key={k} onClick={() => setTaskView(k)} className="px-3 py-1 transition" style={chip(on)}>
+                {k === "work" ? "AT WORK" : "AT HOME"} ({nOpen}){nUrg > 0 ? " ⚑" + nUrg : ""}
                 {k === taskKeyNow ? " ◂" : ""}
               </button>
             );
           })}
         </div>
 
-        {scanning && cand ? (
-          <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
-            <p style={{ ...mono(10, T.fm) }}>THE SCAN</p>
-            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>
-              Do you want to work on <span style={{ fontWeight: 700 }}>{cand.text}</span> more than{" "}
-              <span style={{ fontWeight: 700 }}>{scan.compText}</span>?
+        {cullOpen ? (
+          <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
+            <p style={{ ...mono(10, T.np) }}>CULL THE HERD</p>
+            <p className="mt-1 mb-2" style={{ fontFamily: FONT.body, fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+              {overCap > 0
+                ? `${importants.length} important tasks — demote or delete at least ${overCap} to get under ${S.impCap}.`
+                : "Under the cap — the herd is culled."}
             </p>
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => scanAnswer(true)}
-                className="flex-1 py-2"
-                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
-                YES — DOT IT
-              </button>
-              <button
-                onClick={() => scanAnswer(false)}
-                className="flex-1 py-2"
-                style={{ background: "transparent", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
-                NO — PASS
-              </button>
+            <div className="flex flex-col gap-1">
+              {importants.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 px-3 py-2" style={card}>
+                  <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13, color: T.ink }}>
+                    {t.text}
+                  </span>
+                  <button onClick={() => demoteTask(activeKey, t.id)} className="px-2 py-1 shrink-0" style={chip(false)}>
+                    NORMAL
+                  </button>
+                  <button onClick={() => deleteTask(activeKey, t.id)} className="shrink-0" style={{ ...mono(11, T.np), background: "transparent" }}>
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
-            <button onClick={() => setScan(null)} className="mt-2" style={{ ...mono(9), background: "transparent" }}>
-              STOP SCANNING
+            <button onClick={() => setCullOpen(false)} className="w-full py-2 mt-2" style={btnGhost}>
+              CLOSE
             </button>
           </div>
-        ) : last ? (
+        ) : sortOpen && unsortedList.length > 0 ? (
+          (() => {
+            const u = unsortedList[0];
+            return (
+              <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+                <p style={{ ...mono(10, T.ww) }}>SORT THE TASKS · {unsortedList.length} LEFT</p>
+                <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+                  {u.text}
+                </p>
+                <div className="flex gap-2 mt-2">
+                  {["urgent", "important", "normal"].map((v) => (
+                    <button key={v} onClick={() => setQaImp(v)} className="px-2 py-1" style={chip(qaImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}>
+                      {v.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  {Object.values(STATES).map((s) => (
+                    <button key={s.key} onClick={() => setQaMind(s.key)} className="px-2 py-1" style={chip(qaMind === s.key, s.color)}>
+                      {s.name.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => sortApply(activeKey, u.id, qaImp, qaMind)} className="flex-1 py-2" style={btnInk}>
+                    SAVE & NEXT
+                  </button>
+                  <button onClick={() => setSortOpen(false)} className="flex-1 py-2" style={btnGhost}>
+                    STOP
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        ) : front ? (
           <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
-            <p style={{ ...mono(10, T.ww) }}>WORK THE LAST DOT</p>
-            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
-              {last.text}
-            </p>
-            <div className="flex gap-2 mt-3 items-center">
-              <button
-                onClick={() => resolveTask(activeKey, last.id, "reenter")}
-                className="flex-1 py-2"
-                style={{ background: "transparent", color: T.fm, border: `1px solid ${T.fm}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
-                PROGRESS ↻ RE-ENTER
-              </button>
-              <button
-                onClick={() => resolveTask(activeKey, last.id, "done")}
-                className="px-3 py-2 shrink-0"
-                style={{ background: T.ww, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em" }}
-              >
-                DONE ✓
-              </button>
+            <p style={{ ...mono(10, T.ww) }}>ON DECK · WORK THE FRONT</p>
+            <div className="flex items-start gap-2 mt-1">
+              <span className="shrink-0 mt-1">{tierGlyph(front)}</span>
+              <p style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+                {front.text}
+              </p>
             </div>
+            {front.virtual ? (
+              <button
+                onClick={() => {
+                  if (front.virtual === "cull") setCullOpen(true);
+                  else {
+                    setQaImp("important");
+                    setQaMind("fullmind");
+                    setSortOpen(true);
+                  }
+                }}
+                className="w-full py-2 mt-3"
+                style={btnInk}
+              >
+                {front.virtual === "cull" ? "OPEN THE CULL" : "START SORTING"}
+              </button>
+            ) : (
+              <div className="flex gap-2 mt-3 items-center">
+                <button onClick={() => resolveTask(activeKey, front.id, "later")} className="flex-1 py-2" style={btnFmOutline}>
+                  ↻ LATER
+                </button>
+                <button onClick={() => keepOnDeck(activeKey, front.id, mindNow)} className="flex-1 py-2" style={btnWwOutline}>
+                  KEEP ON DECK
+                </button>
+                <button onClick={() => resolveTask(activeKey, front.id, "done")} className="px-3 py-2 shrink-0" style={btnWw}>
+                  DONE ✓
+                </button>
+              </div>
+            )}
+            {deck.slice(1).map((t) => (
+              <div key={t.id} className="flex items-center gap-2 mt-2" style={{ opacity: 0.85 }}>
+                <span className="shrink-0">{tierGlyph(t)}</span>
+                <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
+                  {t.text}
+                </span>
+                {!t.virtual && (
+                  <button onClick={() => frontTask(activeKey, t.id, mindNow)} className="shrink-0" style={{ ...mono(9, T.ww), background: "transparent" }}>
+                    WORK THIS ↑
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ) : open.length > 0 ? (
-          <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
-            <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
-              No dots on the list. Scan it, oldest first — dot anything you'd rather do than the
-              last thing you dotted.
-            </p>
-            <button
-              onClick={() => startScan(activeKey)}
-              className="w-full py-2 mt-2"
-              style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-            >
-              SCAN THE LIST
-            </button>
-          </div>
-        ) : null}
+        ) : (
+          <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
+            Nothing on deck for {STATES[mindNow] ? STATES[mindNow].name : "this state"} — add a task
+            with the + button.
+          </p>
+        )}
 
         <div className="flex flex-col gap-1">
-          {list.length === 0 &&
-            (() => {
-              const other = activeKey === "work" ? "home" : "work";
-              const otherOpen = taskOpen(other).length;
-              return (
-                <div>
-                  <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
-                    This page is blank — nothing has been deleted.
-                    {otherOpen > 0
-                      ? ` The ${other} list holds ${otherOpen} open task${otherOpen === 1 ? "" : "s"}.`
-                      : " Add the first task below."}
-                  </p>
-                  {otherOpen > 0 && (
-                    <button
-                      onClick={() => setTaskView(other)}
-                      className="mt-2"
-                      style={{ ...mono(10, T.ww), background: "transparent" }}
-                    >
-                      SWITCH TO {other === "work" ? "THE WORK LIST" : "THE HOME LIST"} →
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
+          {list.length === 0 && (
+            <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+              This page is blank — nothing has been deleted. Add with the + button.
+            </p>
+          )}
           {list.map((t) => {
-            const isLast = last && last.id === t.id;
+            const isFront = front && front.id === t.id;
+            const isPinned = pinnedIds.includes(t.id);
             const isEd = editTaskId === t.id;
             return (
               <div
@@ -1940,151 +2173,179 @@ function App() {
                   isEd
                     ? undefined
                     : t.state === "open"
-                    ? () => toggleDot(activeKey, t.id)
+                    ? () => pinToggle(activeKey, t.id)
                     : t.state === "done"
                     ? () => reopenTask(activeKey, t.id)
                     : undefined
                 }
-                className="flex items-center gap-2 px-3 py-2"
+                className="px-3 py-2"
                 style={{
                   ...card,
                   opacity: t.state === "open" ? 1 : 0.55,
-                  borderLeft: isLast ? `4px solid ${T.ww}` : `1px solid ${T.line}`,
+                  borderLeft: isFront
+                    ? `4px solid ${T.ww}`
+                    : isPinned
+                    ? `4px solid ${T.lineSoft}`
+                    : `1px solid ${T.line}`,
                   cursor: isEd || t.state === "reentered" ? "default" : "pointer",
                 }}
               >
-                <span className="shrink-0" style={{ width: 18, textAlign: "center" }}>
-                  {t.state === "done" && (
-                    <span style={{ color: T.ww, fontWeight: 700, fontFamily: FONT.body, fontSize: 13 }}>✓</span>
-                  )}
-                  {t.state === "reentered" && (
-                    <span style={{ color: T.sub, fontFamily: FONT.body, fontSize: 12 }}>↻</span>
-                  )}
-                  {t.state === "open" && t.dot && <Blaze color={isLast ? T.ww : T.ink} size={11} />}
-                </span>
-                {isEd ? (
-                  <input
-                    value={editTaskText}
-                    onChange={(e) => setEditTaskText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveTaskEdit(activeKey);
-                    }}
-                    autoFocus
-                    className="flex-1 px-2 py-1"
-                    style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13.5, outline: "none" }}
-                  />
-                ) : (
-                  <span
-                    className="flex-1"
-                    style={{
-                      fontFamily: FONT.body,
-                      fontSize: 13.5,
-                      color: T.ink,
-                      fontWeight: isLast ? 700 : 400,
-                      textDecoration: t.state === "reentered" ? "line-through" : "none",
-                    }}
-                  >
-                    {t.text}
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0" style={{ width: 16, textAlign: "center" }}>
+                    {t.state === "done" ? (
+                      <span style={{ color: T.ww, fontWeight: 700, fontFamily: FONT.body, fontSize: 13 }}>✓</span>
+                    ) : t.state === "reentered" ? (
+                      <span style={{ color: T.sub, fontFamily: FONT.body, fontSize: 12 }}>↻</span>
+                    ) : (
+                      tierGlyph(t)
+                    )}
                   </span>
-                )}
-                {isEd ? (
-                  <>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        saveTaskEdit(activeKey);
+                  {isEd ? (
+                    <input
+                      value={editTaskText}
+                      onChange={(e) => setEditTaskText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveTaskEdit(activeKey);
                       }}
-                      className="shrink-0"
-                      style={{ ...mono(9, T.ww), background: "transparent" }}
-                    >
-                      SAVE
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditTaskId(null);
+                      autoFocus
+                      className="flex-1 px-2 py-1"
+                      style={{ ...inputS13, fontSize: 13.5 }}
+                    />
+                  ) : (
+                    <span
+                      className="flex-1"
+                      style={{
+                        fontFamily: FONT.body,
+                        fontSize: 13.5,
+                        color: T.ink,
+                        fontWeight: isFront ? 700 : 400,
+                        textDecoration: t.state === "reentered" ? "line-through" : "none",
                       }}
-                      className="shrink-0"
-                      style={{ ...mono(9), background: "transparent" }}
                     >
-                      CANCEL
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditTaskId(t.id);
-                        setEditTaskText(t.text);
-                      }}
-                      className="shrink-0"
-                      style={{ ...mono(11, T.rubric), background: "transparent" }}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteTask(activeKey, t.id);
-                      }}
-                      className="shrink-0"
-                      style={{ ...mono(11), background: "transparent" }}
-                    >
-                      ✕
-                    </button>
-                  </>
+                      {t.text}
+                      {t.state === "open" && (
+                        <span style={{ color: T.sub, fontSize: 10.5 }}>
+                          {" "}· {mindLetterMap[t.mind] || "F"}
+                          {isPinned ? " · deck" : ""}
+                          {t.urgentAt && effImp(t) !== "urgent"
+                            ? ` · ⚑${new Date(t.urgentAt).getMonth() + 1}/${new Date(t.urgentAt).getDate()}`
+                            : ""}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {isEd ? (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          saveTaskEdit(activeKey);
+                        }}
+                        className="shrink-0"
+                        style={{ ...mono(9, T.ww), background: "transparent" }}
+                      >
+                        SAVE
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditTaskId(null);
+                        }}
+                        className="shrink-0"
+                        style={{ ...mono(9), background: "transparent" }}
+                      >
+                        CANCEL
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditTaskId(t.id);
+                          setEditTaskText(t.text);
+                          setEditTaskImp(t.imp || "normal");
+                          setEditTaskMind(t.mind || "fullmind");
+                          setEditTaskDate(t.urgentAt ? toLocalInput(t.urgentAt).slice(0, 10) : "");
+                        }}
+                        className="shrink-0"
+                        style={{ ...mono(11, T.rubric), background: "transparent" }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTask(activeKey, t.id);
+                        }}
+                        className="shrink-0"
+                        style={{ ...mono(11), background: "transparent" }}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </div>
+                {isEd && (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      {["urgent", "important", "normal"].map((v) => (
+                        <button
+                          key={v}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditTaskImp(v);
+                          }}
+                          className="px-2 py-1"
+                          style={chip(editTaskImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}
+                        >
+                          {v.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      {Object.values(STATES).map((s) => (
+                        <button
+                          key={s.key}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditTaskMind(s.key);
+                          }}
+                          className="px-2 py-1"
+                          style={chip(editTaskMind === s.key, s.color)}
+                        >
+                          {s.name.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    {editTaskImp === "important" && (
+                      <div className="flex items-center gap-2">
+                        <label style={{ ...mono(9) }}>URGENT ON</label>
+                        <input
+                          type="date"
+                          value={editTaskDate}
+                          onChange={(e) => setEditTaskDate(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 px-2 py-1"
+                          style={inputS13}
+                        />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
-
-        {(hasDots || hasFinished) && (
+        {hasFinished && (
           <div className="flex gap-3 mt-2">
-            {hasDots && (
-              <button onClick={() => clearDots(activeKey)} style={{ ...mono(9), background: "transparent" }}>
-                CLEAR DOTS
-              </button>
-            )}
-            {hasFinished && (
-              <button onClick={() => sweepFinished(activeKey)} style={{ ...mono(9), background: "transparent" }}>
-                SWEEP FINISHED
-              </button>
-            )}
+            <button onClick={() => sweepFinished(activeKey)} style={{ ...mono(9), background: "transparent" }}>
+              SWEEP FINISHED
+            </button>
           </div>
         )}
-
-        <div className="flex gap-2 mt-3">
-          <input
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Add a task…"
-            className="flex-1 px-3 py-2"
-            style={{
-              background: T.paper,
-              border: `1px solid ${T.line}`,
-              borderRadius: 2,
-              color: T.ink,
-              fontFamily: FONT.body,
-              fontSize: 14,
-              outline: "none",
-            }}
-          />
-          <button
-            onClick={() => addTask(activeKey)}
-            className="px-4"
-            style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2, ...mono(11, T.ink) }}
-          >
-            ADD
-          </button>
-        </div>
         {!bulkOpen ? (
-          <button
-            onClick={() => setBulkOpen(true)}
-            className="mt-2"
-            style={{ ...mono(9), background: "transparent" }}
-          >
+          <button onClick={() => setBulkOpen(true)} className="mt-2" style={{ ...mono(9), background: "transparent" }}>
             ADD MANY AT ONCE ▸
           </button>
         ) : (
@@ -2093,16 +2354,12 @@ function App() {
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               rows={5}
-              placeholder={"One task per line — they'll be added to the end of this list, in order."}
+              placeholder={"One task per line (or ; between) — added as Normal, tagged with your current state."}
               className="w-full p-2"
-              style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, fontSize: 13.5, outline: "none", resize: "vertical" }}
+              style={{ ...inputS13, fontSize: 13.5, resize: "vertical" }}
             />
             <div className="flex gap-2 mt-2">
-              <button
-                onClick={() => addBulk(activeKey)}
-                className="flex-1 py-2"
-                style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
+              <button onClick={() => addBulk(activeKey)} className="flex-1 py-2" style={btnInk}>
                 ADD ALL
               </button>
               <button
@@ -2111,7 +2368,7 @@ function App() {
                   setBulkText("");
                 }}
                 className="flex-1 py-2"
-                style={{ background: "transparent", color: T.sub, border: `1px solid ${T.lineSoft}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
+                style={btnGhost}
               >
                 CANCEL
               </button>
@@ -2119,9 +2376,10 @@ function App() {
           </div>
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          Oldest at the top. Tap any open task to dot it; tap again to un-dot. The lowest dotted
-          task is always the one you work. Tapping a ✓ task reopens it. Scan when no dots remain.
-          Made progress worth keeping? Re-enter it at the end of the list.
+          How it works: up to three tasks wait on deck and you always work the front one. Empty
+          slots refill oldest-first — ⚑ urgents (any state), then ◆ importants for your current
+          state, then normals. Importants turn urgent on their date. Tap a task to pin it on deck;
+          tap a ✓ task to reopen it.
         </p>
       </div>
     );
@@ -2171,7 +2429,7 @@ function App() {
         {[
           { label: "MILES / WK", val: weekMiles.toFixed(1) },
           { label: "TRAIL RUNS", val: weekRuns },
-          { label: "OTF / WK", val: `${weekOtf}/${OTF_TARGET}` },
+          { label: "OTF / WK", val: `${weekOtf}/${S.otfTarget}` },
         ].map((s, i) => (
           <div key={i} className="flex-1 px-2 py-3 text-center" style={card}>
             <p style={{ fontFamily: FONT.disp, fontSize: 25, color: T.ink }}>{s.val}</p>
@@ -2207,7 +2465,7 @@ function App() {
           >
             {daysSinceOtf !== null && daysSinceOtf >= 4
               ? "Long gap — the next class gets harder every day. Get one in soon."
-              : "Short gaps keep it easier. Build toward 3 a week."}
+              : `Short gaps keep it easier. Build toward ${S.otfTarget} a week.`}
           </p>
         </div>
       </div>
@@ -2440,7 +2698,7 @@ function App() {
         )}
       </div>
       <p className="mb-4" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub }}>
-        A state runs until the next check-in; after 5 unlogged hours it turns to Nope. Blank =
+        A state runs until the next check-in; after {S.nopeHours} unlogged hours it turns to Nope. Blank =
         before the record began. Tap a day for its tally.
       </p>
 
@@ -2700,6 +2958,72 @@ function App() {
     </div>
   );
 
+  const MoreView = () => (
+    <div className="flex flex-col gap-2">
+      {[
+        { label: "Training", to: "train", desc: "The quest, sessions, miles" },
+        { label: "Chronicle", to: "log", desc: "Hours, history, safekeeping" },
+        { label: "Settings", to: "settings", desc: "Hours, caps, and rhythms" },
+      ].map((r) => (
+        <button
+          key={r.to}
+          onClick={() => setView({ name: r.to })}
+          className="w-full text-left px-5 py-4 transition active:translate-y-px"
+          style={card}
+        >
+          <span style={{ fontFamily: FONT.disp, fontSize: 26, color: T.ink }}>{r.label}</span>
+          <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: T.sub, marginTop: 2 }}>
+            {r.desc}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
+
+  const SettingsView = () => {
+    const row = (label, key, mode) => (
+      <div className="flex items-center justify-between px-4 py-3" style={card}>
+        <span style={{ ...mono(10) }}>{label}</span>
+        <input
+          type={mode === "time" ? "time" : "text"}
+          inputMode={mode === "time" ? undefined : "decimal"}
+          value={String(S[key])}
+          onChange={(e) => setSetting(key, e.target.value)}
+          className="px-2 py-1 text-right"
+          style={{ ...inputS13, width: 110 }}
+        />
+      </div>
+    );
+    return (
+      <div>
+        <BackLink label="← back" to={{ name: "more" }} />
+        <Rubric className="mb-2">SETTINGS</Rubric>
+        <div className="flex flex-col gap-2">
+          {row("WORK STARTS (M–F)", "workStart", "time")}
+          {row("WORK ENDS", "workEnd", "time")}
+          {row("NOPE AFTER (HOURS)", "nopeHours")}
+          {row("OTF TARGET / WEEK", "otfTarget")}
+          {row("OTF TREAD MILES", "otfMiles")}
+          {row("IMPORTANT CAP", "impCap")}
+          <button
+            onClick={() => setSetting("autoOpen", S.autoOpen === false ? true : false)}
+            className="flex items-center justify-between px-4 py-3 w-full"
+            style={card}
+          >
+            <span style={{ ...mono(10) }}>OPEN INTO CURRENT STATE</span>
+            <span style={{ ...mono(10, S.autoOpen === false ? T.sub : T.ww) }}>
+              {S.autoOpen === false ? "OFF" : "ON"}
+            </span>
+          </button>
+        </div>
+        <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
+          These feed the clock rules, the deck, and the training nudges throughout the book. Work
+          hours decide which task list and nope stack the day belongs to.
+        </p>
+      </div>
+    );
+  };
+
   const d = new Date();
   const dateLine = `${d.toLocaleDateString([], { weekday: "long" })}, the ${ordinal(d.getDate())} day of ${d.toLocaleDateString([], { month: "long" })}`;
 
@@ -2830,6 +3154,8 @@ function App() {
         {view.name === "stack" && StackEditor()}
         {view.name === "train" && TrainView()}
         {view.name === "log" && LogView()}
+        {view.name === "more" && MoreView()}
+        {view.name === "settings" && SettingsView()}
       </div>
 
       {/* meditation overlay */}
@@ -2959,6 +3285,105 @@ function App() {
         </div>
       )}
 
+      {/* quick add */}
+      {qaOpen && (
+        <div className="fixed left-0 right-0 px-4" style={{ bottom: 64, zIndex: 26 }}>
+          <div
+            className="max-w-md mx-auto px-4 py-3"
+            style={{ ...card, boxShadow: `inset 0 0 0 3px ${T.panel}, inset 0 0 0 4px ${T.lineSoft}, 0 -8px 20px rgba(43,29,16,0.3)` }}
+          >
+            <p style={{ ...mono(10, T.rubric) }}>¶ ADD A TASK</p>
+            <input
+              value={qaText}
+              onChange={(e) => setQaText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addQuick();
+              }}
+              autoFocus
+              placeholder="The task…"
+              className="w-full px-3 py-2 mt-2"
+              style={inputS14}
+            />
+            <div className="flex gap-2 mt-2">
+              {["work", "home"].map((k) => (
+                <button key={k} onClick={() => setQaList(k)} className="px-2 py-1" style={chip(qaList === k)}>
+                  {k === "work" ? "WORK" : "HOME"}
+                </button>
+              ))}
+              <span style={{ width: 6 }} />
+              {["normal", "important", "urgent"].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setQaImp(v)}
+                  className="px-2 py-1"
+                  style={chip(qaImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}
+                >
+                  {v === "normal" ? "NORM" : v === "important" ? "IMP" : "URG"}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-2 items-center">
+              {Object.values(STATES).map((s) => (
+                <button key={s.key} onClick={() => setQaMind(s.key)} className="px-2 py-1" style={chip(qaMind === s.key, s.color)}>
+                  {s.name.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {qaImp === "important" && (
+              <div className="flex items-center gap-2 mt-2">
+                <label style={{ ...mono(9) }}>URGENT ON (OPT.)</label>
+                <input
+                  type="date"
+                  value={qaDate}
+                  onChange={(e) => setQaDate(e.target.value)}
+                  className="flex-1 px-2 py-1"
+                  style={inputS13}
+                />
+              </div>
+            )}
+            <div className="flex gap-2 mt-3">
+              <button onClick={addQuick} className="flex-1 py-2" style={btnInk}>
+                ADD
+              </button>
+              <button onClick={() => setQaOpen(false)} className="flex-1 py-2" style={btnGhost}>
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* the + */}
+      {!medOpen && !qaOpen && (
+        <button
+          onClick={() => {
+            setQaList(taskKeyNow);
+            setQaMind(mindNow);
+            setQaImp("normal");
+            setQaOpen(true);
+          }}
+          className="fixed"
+          style={{
+            right: 18,
+            bottom: 86,
+            width: 54,
+            height: 54,
+            background: T.ink,
+            color: T.panel,
+            borderRadius: 4,
+            fontFamily: FONT.disp,
+            fontSize: 30,
+            zIndex: 22,
+            boxShadow: `0 0 0 3px ${T.paper}, 0 0 0 4px ${T.lineSoft}`,
+            lineHeight: "54px",
+            textAlign: "center",
+            padding: 0,
+          }}
+        >
+          +
+        </button>
+      )}
+
       {/* toast */}
       {toast && (
         <div
@@ -2990,8 +3415,7 @@ function App() {
         <div className="max-w-md mx-auto flex">
           <NavBtn id="now" label="Now" />
           <NavBtn id="tasks" label="Tasks" />
-          <NavBtn id="train" label="Train" />
-          <NavBtn id="log" label="Chronicle" />
+          <NavBtn id="more" label="⋯" />
         </div>
       </div>
     </div>
