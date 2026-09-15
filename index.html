@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260915-030450 -->
+<!-- build 20260915-204022 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -431,6 +431,7 @@ function App() {
   const [eMin, setEMin] = useState("");
   const [eText, setEText] = useState("");
   const [eState, setEState] = useState("wuwei");
+  const [eMuscles, setEMuscles] = useState([]);
   const [eTs, setETs] = useState("");
   const [logLimit, setLogLimit] = useState(30);
   const [backupText, setBackupText] = useState("");
@@ -807,6 +808,7 @@ function App() {
     if (e.type === "workout") {
       setEMiles(e.miles != null ? String(e.miles) : "");
       setEMin(e.minutes != null ? String(e.minutes) : "");
+      setEMuscles(e.muscles || []);
     }
     if (e.type === "dump" || e.type === "task") setEText(e.text || "");
     if (e.type === "checkin") setEState(e.state);
@@ -822,6 +824,7 @@ function App() {
       const mn = parseInt(eMin, 10);
       if (!isNaN(mi) && mi >= 0) patch.miles = mi;
       if (mn > 0) patch.minutes = mn;
+      patch.muscles = eMuscles;
     }
     if (editEntry.type === "dump" || editEntry.type === "task") {
       const t = eText.trim();
@@ -3244,9 +3247,22 @@ function App() {
                       </span>
                     )}
                     {e.type === "workout" &&
-                      (e.kind === "otf"
-                        ? `OTF · ${e.minutes} min · ${(e.miles || 0).toFixed(1)} mi`
-                        : `Trail · ${e.miles.toFixed(1)} mi${e.minutes ? ` · ${e.minutes} min` : ""}`)}
+                      (e.kind === "otf" ? (
+                        <span>
+                          {`OTF · ${e.minutes} min · ${(e.miles || 0).toFixed(1)} mi`}
+                          <span style={{ color: (e.muscles || []).length ? T.sub : T.np, fontSize: 11.5 }}>
+                            {(e.muscles || []).length
+                              ? " · " +
+                                e.muscles
+                                  .map((k) => (MUSCLES.find((mm) => mm.key === k) || { label: k }).label)
+                                  .join(", ")
+                                  .toLowerCase()
+                              : " · no groups logged"}
+                          </span>
+                        </span>
+                      ) : (
+                        `Trail · ${e.miles.toFixed(1)} mi${e.minutes ? ` · ${e.minutes} min` : ""}`
+                      ))}
                     {e.type === "dump" && <span style={{ fontStyle: "italic" }}>{e.text}</span>}
                     {e.type === "task" && (
                       <span>
@@ -3311,6 +3327,7 @@ function App() {
                     </div>
                   )}
                   {e.type === "workout" && (
+                    <div>
                     <div className="flex items-center gap-3">
                       <label style={{ ...mono(10) }}>MI.</label>
                       <input
@@ -3328,6 +3345,27 @@ function App() {
                         className="w-16 px-2 py-2 text-center"
                         style={{ background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2, color: T.ink, fontFamily: FONT.body, outline: "none" }}
                       />
+                    </div>
+                    <p className="mt-2" style={{ ...mono(9) }}>BLASTED — TAP THE GROUPS</p>
+                    <div className="mt-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      {MUSCLES.map((mu) => {
+                        const on = eMuscles.includes(mu.key);
+                        return (
+                          <button
+                            key={mu.key}
+                            onClick={() =>
+                              setEMuscles(
+                                on ? eMuscles.filter((x) => x !== mu.key) : [...eMuscles, mu.key]
+                              )
+                            }
+                            className="py-1"
+                            style={chip(on, T.fm)}
+                          >
+                            {mu.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                     </div>
                   )}
                   {(e.type === "dump" || e.type === "task") && (
