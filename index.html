@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260915-204022 -->
+<!-- build 20260915-231133 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -977,21 +977,45 @@ function App() {
             mind: "fullmind",
           });
         });
+    const urgents = [...open.filter((t) => effImp(t) === "urgent"), ...meetVirtuals];
+    const metaTasks = virtuals.filter((v) => v.mind === mind);
     const candidates = [
-      ...open.filter((t) => effImp(t) === "urgent"),
-      ...meetVirtuals,
-      ...virtuals.filter((v) => v.mind === mind),
       ...open.filter((t) => effImp(t) === "important" && t.mind === mind),
       ...open.filter((t) => effImp(t) === "normal" && t.mind === mind),
     ];
-    const deck = [...pinned];
-    for (const c of candidates) {
+    // urgents take the front, then the book's own meta-tasks, then your pins
+    const deck = [...urgents.slice(0, 2), ...metaTasks.slice(0, 1)];
+    for (const p of pinned) {
+      if (deck.length >= 3) break;
+      if (!deck.some((d) => d.id === p.id)) deck.push(p);
+    }
+    for (const c of [...urgents.slice(2), ...metaTasks.slice(1), ...candidates]) {
       if (deck.length >= 3) break;
       if (!deck.some((d) => d.id === c.id)) deck.push(c);
     }
     return deck;
   };
   const workTask = (key, mind) => deckFor(key, mind)[0] || null;
+  // every screen reads the same deck: the list you're viewing, else the clock's list
+  const deckKey = taskView || taskKeyNow;
+  const openVirtual = (v) => {
+    setTaskView(deckKey);
+    setView({ name: "tasks" });
+    if (v.virtual === "cull") setCullOpen(true);
+    else if (v.virtual === "meet") setMeetView(true);
+    else if (v.virtual === "sort") {
+      setQaImp("important");
+      setQaMind("fullmind");
+      setSortOpen(true);
+    }
+  };
+  const openTaskCard = (t) => {
+    if (t && t.virtual) openVirtual(t);
+    else {
+      setTaskView(deckKey);
+      setView({ name: "tasks" });
+    }
+  };
   const pinToggle = (key, id) => {
     const cur = (data.top3 && data.top3[key]) || [];
     const on = cur.includes(id);
@@ -1755,17 +1779,21 @@ function App() {
       />
       {MoveFirst()}
       {(() => {
-        const ft = workTask(taskKeyNow, "fullmind");
+        const ft = workTask(deckKey, "fullmind");
         return ft ? (
-          <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+          <div
+            onClick={() => openTaskCard(ft)}
+            className="px-4 py-3 mb-4"
+            style={{ ...card, borderLeft: `4px solid ${T.fm}`, cursor: "pointer" }}
+          >
             <p style={{ ...mono(10, T.fm) }}>
-              THE TASK · {taskKeyNow === "work" ? "AT WORK" : "AT HOME"}
+              THE TASK · {deckKey === "work" ? "AT WORK" : "AT HOME"}
             </p>
             <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 15.5, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
               {ft.text}
             </p>
-            <button onClick={() => setView({ name: "tasks" })} className="mt-1" style={{ ...mono(10, T.sub), background: "transparent" }}>
-              OPEN THE TASKS →
+            <button onClick={() => openTaskCard(ft)} className="mt-1" style={{ ...mono(10, T.sub), background: "transparent" }}>
+              {ft.virtual ? "OPEN IT →" : "OPEN THE TASKS →"}
             </button>
           </div>
         ) : null;
@@ -1813,16 +1841,20 @@ function App() {
   );
 
   const WuWeiView = () => {
-    const cur = workTask(taskKeyNow, "wuwei");
+    const cur = workTask(deckKey, "wuwei");
     return (
       <div>
         <BackLink />
         <StateHeader s={STATES.wuwei} line="You're in it. Don't spend it deciding — spend it moving." />
         {cur ? (
           <div>
-            <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+            <div
+              onClick={() => openTaskCard(cur)}
+              className="px-4 py-4 mb-3"
+              style={{ ...card, borderLeft: `4px solid ${T.ww}`, cursor: "pointer" }}
+            >
               <p style={{ ...mono(10, T.ww) }}>
-                THE TASK · {taskKeyNow === "work" ? "AT WORK" : "AT HOME"}
+                THE TASK · {deckKey === "work" ? "AT WORK" : "AT HOME"}
               </p>
               <p
                 className="mt-1"
@@ -1831,11 +1863,11 @@ function App() {
                 {cur.text}
               </p>
               <button
-                onClick={() => setView({ name: "tasks" })}
+                onClick={() => openTaskCard(cur)}
                 className="mt-2"
                 style={{ ...mono(10, T.sub), background: "transparent" }}
               >
-                OPEN THE LIST →
+                {cur.virtual ? "OPEN IT →" : "OPEN THE LIST →"}
               </button>
             </div>
             <div className="flex justify-center">
@@ -1861,7 +1893,7 @@ function App() {
           <div>
             <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
               <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
-                Nothing on deck for Wu Wei on the {taskKeyNow === "work" ? "work" : "home"} list.
+                Nothing on deck for Wu Wei on the {deckKey === "work" ? "work" : "home"} list.
               </p>
               <button
                 onClick={() => setView({ name: "tasks" })}
@@ -2342,15 +2374,6 @@ function App() {
     const importants = open.filter((t) => effImp(t) === "important");
     const overCap = importants.length - (Number(S.impCap) || 30);
     if (meetView) return MeetingsView();
-    const openVirtual = (v) => {
-      if (v.virtual === "cull") setCullOpen(true);
-      else if (v.virtual === "meet") setMeetView(true);
-      else {
-        setQaImp("important");
-        setQaMind("fullmind");
-        setSortOpen(true);
-      }
-    };
     const startTaskEdit = (t) => {
       setEditTaskId(t.id);
       setEditTaskText(t.text);
@@ -2798,10 +2821,10 @@ function App() {
           </div>
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          How it works: up to three tasks wait on deck and you always work the front one. Empty
-          slots refill oldest-first — ⚑ urgents (any state), then ◆ importants for your current
-          state, then normals. Importants turn urgent on their date. Tap a task to pin it on deck;
-          tap a ✓ task to reopen it.
+          How it works: up to three tasks wait on deck and you always work the front one. ⚑ Urgents
+          — including meetings that need setting up — take the front slots (at most two), then your
+          pinned tasks, then ◆ importants and normals tagged for your current state. Importants
+          turn urgent on their date. Tap a task to pin it on deck; tap a ✓ task to reopen it.
         </p>
       </div>
     );
