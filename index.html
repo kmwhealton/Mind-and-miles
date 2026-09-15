@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260914-190920 -->
+<!-- build 20260915-030450 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -219,6 +219,7 @@ const MUSCLES = [
   { key: "lowback", label: "LOW BACK" },
   { key: "glutes", label: "GLUTES" },
   { key: "hams", label: "HAMS" },
+  { key: "groin", label: "GROIN" },
   { key: "quads", label: "QUADS" },
   { key: "abs", label: "ABS" },
 ];
@@ -403,6 +404,7 @@ function App() {
   const [editTaskImp, setEditTaskImp] = useState("normal");
   const [editTaskMind, setEditTaskMind] = useState("fullmind");
   const [editTaskDate, setEditTaskDate] = useState("");
+  const [editFrom, setEditFrom] = useState("list"); // 'list' | 'deck'
   const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
   const [cullOpen, setCullOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -2346,6 +2348,72 @@ function App() {
         setSortOpen(true);
       }
     };
+    const startTaskEdit = (t) => {
+      setEditTaskId(t.id);
+      setEditTaskText(t.text);
+      setEditTaskImp(t.imp || "normal");
+      setEditTaskMind(t.mind || "fullmind");
+      setEditTaskDate(t.urgentAt ? toLocalInput(t.urgentAt).slice(0, 10) : "");
+      setEditFrom("deck");
+    };
+    const TaskEditor = () => (
+      <div className="mt-2 flex flex-col gap-2">
+        <input
+          value={editTaskText}
+          onChange={(e) => setEditTaskText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") saveTaskEdit(activeKey);
+          }}
+          autoFocus
+          className="w-full px-2 py-1"
+          style={{ ...inputS13, fontSize: 13.5 }}
+        />
+        <div className="flex gap-2">
+          {["urgent", "important", "normal"].map((v) => (
+            <button
+              key={v}
+              onClick={() => setEditTaskImp(v)}
+              className="px-2 py-1"
+              style={chip(editTaskImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}
+            >
+              {v.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {Object.values(STATES).map((st) => (
+            <button
+              key={st.key}
+              onClick={() => setEditTaskMind(st.key)}
+              className="px-2 py-1"
+              style={chip(editTaskMind === st.key, st.color)}
+            >
+              {st.name.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        {editTaskImp === "important" && (
+          <div className="flex items-center gap-2">
+            <label style={{ ...mono(9) }}>URGENT ON</label>
+            <input
+              type="date"
+              value={editTaskDate}
+              onChange={(e) => setEditTaskDate(e.target.value)}
+              className="flex-1 px-2 py-1"
+              style={inputS13}
+            />
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button onClick={() => saveTaskEdit(activeKey)} className="flex-1 py-2" style={btnInk}>
+            SAVE
+          </button>
+          <button onClick={() => setEditTaskId(null)} className="flex-1 py-2" style={btnGhost}>
+            CANCEL
+          </button>
+        </div>
+      </div>
+    );
     return (
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -2436,9 +2504,14 @@ function App() {
             <p style={{ ...mono(10, T.ww) }}>ON DECK · WORK THE FRONT</p>
             <div className="flex items-start gap-2 mt-1">
               <span className="shrink-0 mt-1">{tierGlyph(front)}</span>
-              <p style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+              <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
                 {front.text}
               </p>
+              {!front.virtual && (
+                <button onClick={() => startTaskEdit(front)} className="shrink-0" style={{ ...mono(11, T.rubric), background: "transparent" }}>
+                  ✎
+                </button>
+              )}
             </div>
             {front.virtual ? (
               <button
@@ -2448,6 +2521,8 @@ function App() {
               >
                 {front.virtual === "cull" ? "OPEN THE CULL" : front.virtual === "meet" ? "OPEN THE ROSTER" : "START SORTING"}
               </button>
+            ) : editTaskId === front.id && editFrom === "deck" ? (
+              TaskEditor()
             ) : (
               <div className="flex gap-2 mt-3 items-center">
                 <button onClick={() => resolveTask(activeKey, front.id, "later")} className="flex-1 py-2" style={btnFmOutline}>
@@ -2462,27 +2537,33 @@ function App() {
               </div>
             )}
             {deck.slice(1).map((t) => (
-              <div key={t.id} className="flex items-center gap-2 mt-2" style={{ opacity: 0.85 }}>
-                <span className="shrink-0">{tierGlyph(t)}</span>
-                <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
-                  {t.text}
-                </span>
-                {t.virtual ? (
-                  <button onClick={() => openVirtual(t)} className="shrink-0" style={{ ...mono(9, T.np), background: "transparent" }}>
-                    OPEN ▸
-                  </button>
-                ) : (
-                  <>
-                    <button onClick={() => frontTask(activeKey, t.id, mindNow)} className="shrink-0" style={{ ...mono(9, T.ww), background: "transparent" }}>
-                      WORK THIS ↑
+              <div key={t.id} className="mt-2" style={{ opacity: 0.85 }}>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0">{tierGlyph(t)}</span>
+                  <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
+                    {t.text}
+                  </span>
+                  {t.virtual ? (
+                    <button onClick={() => openVirtual(t)} className="shrink-0" style={{ ...mono(9, T.np), background: "transparent" }}>
+                      OPEN ▸
                     </button>
-                    {pinnedIds.includes(t.id) && (
-                      <button onClick={() => pinToggle(activeKey, t.id)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
-                        ✕
+                  ) : (
+                    <>
+                      <button onClick={() => frontTask(activeKey, t.id, mindNow)} className="shrink-0" style={{ ...mono(9, T.ww), background: "transparent" }}>
+                        WORK THIS ↑
                       </button>
-                    )}
-                  </>
-                )}
+                      <button onClick={() => startTaskEdit(t)} className="shrink-0" style={{ ...mono(10, T.rubric), background: "transparent" }}>
+                        ✎
+                      </button>
+                      {pinnedIds.includes(t.id) && (
+                        <button onClick={() => pinToggle(activeKey, t.id)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
+                          ✕
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+                {editTaskId === t.id && editFrom === "deck" && TaskEditor()}
               </div>
             ))}
           </div>
@@ -2502,7 +2583,7 @@ function App() {
           {list.map((t) => {
             const isFront = front && front.id === t.id;
             const isPinned = pinnedIds.includes(t.id);
-            const isEd = editTaskId === t.id;
+            const isEd = editTaskId === t.id && editFrom === "list";
             return (
               <div
                 key={t.id}
@@ -2604,6 +2685,7 @@ function App() {
                           setEditTaskImp(t.imp || "normal");
                           setEditTaskMind(t.mind || "fullmind");
                           setEditTaskDate(t.urgentAt ? toLocalInput(t.urgentAt).slice(0, 10) : "");
+                          setEditFrom("list");
                         }}
                         className="shrink-0"
                         style={{ ...mono(11, T.rubric), background: "transparent" }}
@@ -2959,7 +3041,7 @@ function App() {
       {/* muscle ledger */}
       <div className="flex items-center justify-between mb-2">
         <Rubric>THE MUSCLE LEDGER</Rubric>
-        <span style={{ ...mono(9, freshMuscles >= 10 ? T.ww : T.sub) }}>{freshMuscles}/10 THIS WEEK</span>
+        <span style={{ ...mono(9, freshMuscles >= 11 ? T.ww : T.sub) }}>{freshMuscles}/11 THIS WEEK</span>
       </div>
       <div className="px-4 py-3 mb-4" style={card}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
