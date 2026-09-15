@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260915-233054 -->
+<!-- build 20260915-235115 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -237,6 +237,8 @@ const DEFAULTS = {
   taskRev: 3,
   settings: DEFAULT_SETTINGS,
   top3: { work: [], home: [] },
+  held: { work: {}, home: {} },
+  front: { work: null, home: null },
   meetings: [],
 };
 
@@ -501,6 +503,14 @@ function App() {
                 ? parsed.top3
                 : { work: [], home: [] };
             merged.meetings = Array.isArray(parsed.meetings) ? parsed.meetings : [];
+            merged.held =
+              parsed.held && parsed.held.work && parsed.held.home
+                ? parsed.held
+                : { work: {}, home: {} };
+            merged.front =
+              parsed.front && typeof parsed.front === "object"
+                ? parsed.front
+                : { work: null, home: null };
             if (!parsed.taskRev || parsed.taskRev < 3) {
               const up = (arr) =>
                 (arr || []).map((t) => ({
@@ -995,7 +1005,16 @@ function App() {
       if (deck.length >= 3) break;
       if (!deck.some((d) => d.id === c.id)) deck.push(c);
     }
-    return deck;
+    // anything you set down with "keep on deck" sinks to the bottom
+    const heldMap = (data.held && data.held[key]) || {};
+    const ordered = deck
+      .map((t, i) => ({ t, i, h: heldMap[t.id] || 0 }))
+      .sort((a, b) => (a.h ? 1 : 0) - (b.h ? 1 : 0) || a.h - b.h || a.i - b.i)
+      .map((x) => x.t);
+    // a task you chose to work leads, whatever its tier
+    const fid = data.front && data.front[key];
+    const chosen = fid ? ordered.find((t) => t.id === fid) : null;
+    return chosen ? [chosen, ...ordered.filter((t) => t.id !== fid)] : ordered;
   };
   const workTask = (key, mind) => deckFor(key, mind)[0] || null;
   // every screen reads the same deck: the list you're viewing, else the clock's list
@@ -1029,7 +1048,13 @@ function App() {
     const rest = deckFor(key, mind)
       .filter((t) => !t.virtual && t.id !== id)
       .map((t) => t.id);
-    commit({ ...data, top3: { ...data.top3, [key]: [id, ...rest].slice(0, 3) } });
+    commit({
+      ...data,
+      top3: { ...data.top3, [key]: [id, ...rest].slice(0, 3) },
+      held: clearHeld(key, id),
+      front: { ...data.front, [key]: id },
+    });
+    ping("Now the front");
   };
   const keepOnDeck = (key, id, mind) => {
     const t = (data.tasks[key] || []).find((x) => x.id === id);
@@ -1040,9 +1065,16 @@ function App() {
     commit({
       ...data,
       top3: { ...data.top3, [key]: [...others, id].slice(-3) },
+      held: { ...data.held, [key]: { ...((data.held && data.held[key]) || {}), [id]: Date.now() } },
+      front: { ...data.front, [key]: (data.front && data.front[key]) === id ? null : (data.front || {})[key] },
       taskLog: entry ? [entry, ...(data.taskLog || [])] : data.taskLog,
     });
-    ping("Kept on deck");
+    ping("Set down — back of the deck");
+  };
+  const clearHeld = (key, id) => {
+    const cur = { ...((data.held && data.held[key]) || {}) };
+    delete cur[id];
+    return { ...data.held, [key]: cur };
   };
   const newTaskObj = (text, imp, mind, urgentAt, unsorted) => ({
     id: uid(),
@@ -1134,6 +1166,8 @@ function App() {
       tasks: { ...data.tasks, [key]: next },
       taskLog: [entry, ...(data.taskLog || [])],
       top3: { ...data.top3, [key]: ((data.top3 && data.top3[key]) || []).filter((x) => x !== id) },
+      held: clearHeld(key, id),
+      front: { ...data.front, [key]: (data.front && data.front[key]) === id ? null : (data.front || {})[key] },
     });
     ping(how === "done" ? "Done" : "Re-entered");
   };
@@ -2613,7 +2647,11 @@ function App() {
                     </button>
                   ) : (
                     <>
-                      <button onClick={() => frontTask(activeKey, t.id, mindNow)} className="shrink-0" style={{ ...mono(9, T.ww), background: "transparent" }}>
+                      <button
+                        onClick={() => frontTask(activeKey, t.id, mindNow)}
+                        className="shrink-0 px-2 py-1"
+                        style={{ ...mono(9, T.panel), background: T.ww, border: `1px solid ${T.ink}`, borderRadius: 2 }}
+                      >
                         WORK THIS ↑
                       </button>
                       <button onClick={() => startTaskEdit(t)} className="shrink-0" style={{ ...mono(10, T.rubric), background: "transparent" }}>
