@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260915-231133 -->
+<!-- build 20260915-233054 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -423,6 +423,8 @@ function App() {
   const [editMeetCadence, setEditMeetCadence] = useState("");
   const [schedFor, setSchedFor] = useState(null);
   const [schedDate, setSchedDate] = useState("");
+  const [lastMetFor, setLastMetFor] = useState(null);
+  const [lastMetDate, setLastMetDate] = useState("");
   const [newItem, setNewItem] = useState("");
 
   // entry editing + history + backup
@@ -1217,6 +1219,16 @@ function App() {
         x.id === id ? { ...x, agenda: (x.agenda || []).filter((a) => a.id !== aid) } : x
       )
     );
+  const setLastMet = (id) => {
+    if (!lastMetDate) return;
+    const ts = new Date(lastMetDate + "T09:00").getTime();
+    if (isNaN(ts)) return;
+    setMeetings(
+      (data.meetings || []).map((x) => (x.id === id ? { ...x, lastMet: ts } : x))
+    );
+    setLastMetFor(null);
+    ping("Amended");
+  };
   const saveMeetingEdit = (id) => {
     const nm = editMeetName.trim();
     if (!nm) return;
@@ -2280,7 +2292,14 @@ function App() {
                     </>
                   )}
                 </div>
-                <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 11.5, color: isDue ? T.np : T.sub }}>
+                <p
+                  className="mt-1"
+                  onClick={() => {
+                    setLastMetFor(lastMetFor === m.id ? null : m.id);
+                    setLastMetDate(m.lastMet ? toLocalInput(m.lastMet).slice(0, 10) : "");
+                  }}
+                  style={{ fontFamily: FONT.body, fontSize: 11.5, color: isDue ? T.np : T.sub, cursor: "pointer" }}
+                >
                   {scheduledFuture
                     ? `Scheduled for ${fmtDay(m.scheduledFor)}`
                     : scheduledPassed
@@ -2288,7 +2307,26 @@ function App() {
                     : m.lastMet
                     ? `Met ${fmtDay(m.lastMet)}${od > 0 ? ` · ${od}d past cadence` : ""}`
                     : "Never met — due now"}
+                  <span style={{ color: T.rubric }}> ✎</span>
                 </p>
+                {lastMetFor === m.id && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <label style={{ ...mono(9) }}>LAST MET</label>
+                    <input
+                      type="date"
+                      value={lastMetDate}
+                      onChange={(e) => setLastMetDate(e.target.value)}
+                      className="flex-1 px-2 py-1"
+                      style={inputS13}
+                    />
+                    <button onClick={() => setLastMet(m.id)} className="px-3 py-2 shrink-0" style={btnInk}>
+                      SET
+                    </button>
+                    <button onClick={() => setLastMetFor(null)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {(m.agenda || []).length > 0 && (
                   <div className="mt-2 flex flex-col gap-1">
                     {m.agenda.map((a) => (
