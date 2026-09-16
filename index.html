@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260915-235115 -->
+<!-- build 20260916-181403 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -1183,13 +1183,28 @@ function App() {
     setTasks(key, (data.tasks[key] || []).filter((t) => t.state === "open"));
 
   // ————— meetings: the roster —————
+  const startOfDay = (ts) => {
+    const d = new Date(ts);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
   const meetingsDue = () => {
     const day = 86400e3;
+    const today = startOfDay(now);
     return (data.meetings || []).filter((m) => {
-      if (m.scheduledFor && m.scheduledFor > now) return false;
+      if (m.snoozeUntil && m.snoozeUntil > now) return false;
+      // anything on the books for today or later is handled
+      if (m.scheduledFor && startOfDay(m.scheduledFor) >= today) return false;
       if (!m.lastMet) return true;
       return now - m.lastMet >= (Number(m.cadenceDays) || 14) * day;
     });
+  };
+  const snoozeMeeting = (id) => {
+    const tomorrow = startOfDay(now) + 86400e3;
+    setMeetings(
+      (data.meetings || []).map((x) => (x.id === id ? { ...x, snoozeUntil: tomorrow } : x))
+    );
+    ping("In progress — back tomorrow");
   };
   const overdueDays = (m) =>
     m.lastMet ? Math.floor((now - m.lastMet) / 86400e3) - (Number(m.cadenceDays) || 14) : null;
@@ -2282,8 +2297,8 @@ function App() {
             const od = overdueDays(m);
             const isEd = editMeetId === m.id;
             const schedOpen = schedFor === m.id;
-            const scheduledFuture = m.scheduledFor && m.scheduledFor > now;
-            const scheduledPassed = m.scheduledFor && m.scheduledFor <= now;
+            const scheduledFuture = m.scheduledFor && startOfDay(m.scheduledFor) >= startOfDay(now);
+            const scheduledPassed = m.scheduledFor && startOfDay(m.scheduledFor) < startOfDay(now);
             return (
               <div
                 key={m.id}
@@ -2334,7 +2349,9 @@ function App() {
                   }}
                   style={{ fontFamily: FONT.body, fontSize: 11.5, color: isDue ? T.np : T.sub, cursor: "pointer" }}
                 >
-                  {scheduledFuture
+                  {m.snoozeUntil && m.snoozeUntil > now
+                    ? "In progress — back tomorrow"
+                    : scheduledFuture
                     ? `Scheduled for ${fmtDay(m.scheduledFor)}`
                     : scheduledPassed
                     ? `Was scheduled ${fmtDay(m.scheduledFor)} — did it happen?`
@@ -2395,6 +2412,11 @@ function App() {
                   <button onClick={() => metToday(m.id)} className="flex-1 py-2" style={btnWwOutline}>
                     MET ✓
                   </button>
+                  {isDue && (
+                    <button onClick={() => snoozeMeeting(m.id)} className="px-3 py-2 shrink-0" style={btnGhost}>
+                      ↻ TOMORROW
+                    </button>
+                  )}
                   {schedOpen ? (
                     <>
                       <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} className="flex-1 px-2 py-1" style={inputS13} />
@@ -2612,13 +2634,24 @@ function App() {
               )}
             </div>
             {front.virtual ? (
-              <button
-                onClick={() => openVirtual(front)}
-                className="w-full py-2 mt-3"
-                style={btnInk}
-              >
-                {front.virtual === "cull" ? "OPEN THE CULL" : front.virtual === "meet" ? "OPEN THE ROSTER" : "START SORTING"}
-              </button>
+              <div>
+                <button onClick={() => openVirtual(front)} className="w-full py-2 mt-3" style={btnInk}>
+                  {front.virtual === "cull"
+                    ? "OPEN THE CULL"
+                    : front.virtual === "meet"
+                    ? "OPEN THE ROSTER"
+                    : "START SORTING"}
+                </button>
+                {front.virtual === "meet" && (
+                  <button
+                    onClick={() => snoozeMeeting(front.id.slice(5))}
+                    className="w-full py-2 mt-2"
+                    style={btnFmOutline}
+                  >
+                    ↻ IN PROGRESS — BACK TOMORROW
+                  </button>
+                )}
+              </div>
             ) : editTaskId === front.id && editFrom === "deck" ? (
               TaskEditor()
             ) : (
