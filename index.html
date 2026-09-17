@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260917-174032 -->
+<!-- build 20260917-191821 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -140,6 +140,7 @@ const DEFAULT_SETTINGS = {
   otfTarget: 3,
   otfMiles: 2.5,
   impCap: 30,
+  mileFloor: 20,
   autoOpen: true,
 };
 const isWorkHours = (s = DEFAULT_SETTINGS, d = new Date()) => {
@@ -1474,7 +1475,8 @@ function App() {
   const last14 = milesBetween(14, 0);
   const prior14 = milesBetween(28, 14);
   const RAMP = 1.3; // aggressive: roughly +15% a week, compounded across the fortnight
-  const mileTarget = Math.max(prior14 > 0 ? prior14 * RAMP : 6, 6);
+  const mileFloor = Number(S.mileFloor) || 20;
+  const mileTarget = Math.max(prior14 * RAMP, mileFloor);
   const mileLeft = Math.max(0, mileTarget - last14);
   const overCeiling = last14 > mileTarget;
   const muscleZone = (k) => {
@@ -3326,8 +3328,8 @@ function App() {
             : `${mileLeft.toFixed(1)} mi left in the ceiling. Go no further than ${mileTarget.toFixed(1)} mi over these 14 days.`}
         </p>
         <p className="mt-1" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 10.5, color: T.sub, lineHeight: 1.5 }}>
-          A ceiling, not a goal — the number is the previous fortnight ({prior14.toFixed(1)} mi)
-          plus a hard ramp. Reaching it early means rest, not more.
+          A ceiling, not a goal — the previous fortnight ({prior14.toFixed(1)} mi) plus a hard
+          ramp, never below your floor of {mileFloor} mi. Reaching it early means rest, not more.
         </p>
       </div>
 
@@ -3843,6 +3845,7 @@ function App() {
           {row("OTF TARGET / WEEK", "otfTarget")}
           {row("OTF TREAD MILES", "otfMiles")}
           {row("IMPORTANT CAP", "impCap")}
+          {row("MILES FLOOR / 14 DAYS", "mileFloor")}
           <button
             onClick={() => setSetting("autoOpen", S.autoOpen === false ? true : false)}
             className="flex items-center justify-between px-4 py-3 w-full"
