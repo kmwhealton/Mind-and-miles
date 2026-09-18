@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260917-191821 -->
+<!-- build 20260918-143344 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -56,6 +56,7 @@
 .fixed{position:fixed}.bottom-0{bottom:0}.left-0{left:0}.right-0{right:0}
 .transition{transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease}
 .active\:translate-y-px:active{transform:translateY(1px)}
+.px-6{padding-left:1.5rem;padding-right:1.5rem}
 html,body{background:#E7D9AE}
 #boot{display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Georgia,serif;color:#6E5A38;font-style:italic}
 </style>
@@ -231,8 +232,12 @@ const GAP_ACTIVITIES = [
   "Talked",
   "Errands",
   "Nothing",
+  "Beer",
   "Don't remember",
 ];
+const NOPE_FLAVORS = ["Tired", "Overwhelmed", "Bored", "Anxious", "Avoiding", "Just don't wanna"];
+const NOPE_BEFORE = ["Meeting", "Email", "Ate", "Woke up", "Doomscroll", "Family", "Nothing"];
+const EXIT_SHIFTS = ["Moved", "Ate", "Slept", "Talked", "Deadline", "Just started", "Time passed", "Don't know"];
 const GAP_DURATIONS = [
   { label: "15m", min: 15 },
   { label: "30m", min: 30 },
@@ -488,6 +493,7 @@ function App() {
   const [medTotal, setMedTotal] = useState(0);
   const [medLeft, setMedLeft] = useState(0);
   const [medDone, setMedDone] = useState(false);
+  const [medDoor, setMedDoor] = useState(null); // task text when the timer is a two-minute door
   const audioRef = useRef(null);
   const medEndRef = useRef(0);
   const wakeLockRef = useRef(null);
@@ -757,10 +763,32 @@ function App() {
       const front = workTask(deckKey, mindNow);
       if (front && !front.virtual) c.avoiding = front.text;
     }
+    if (stateKey !== "nope" && currentState && currentState.key === "nope") c.exitFrom = "nope";
+    try {
+      const open = taskOpen(deckKey);
+      c.load = {
+        urgents: open.filter((t) => effImp(t) === "urgent").length,
+        importants: open.filter((t) => effImp(t) === "important").length,
+        overCap: importantCount(deckKey) > (Number(S.impCap) || 30),
+      };
+    } catch (e) {}
     commit({ ...data, checkins: [c, ...data.checkins] });
     setActiveCheckin(c.id);
     setStackView(null); // follow the clock again on a fresh check-in
     setView({ name: "state", state: stateKey });
+  };
+  const setCheckinField = (id, k, v) =>
+    commit({
+      ...data,
+      checkins: data.checkins.map((c) => (c.id === id ? { ...c, [k]: v } : c)),
+    });
+  const startDoor = (taskText) => {
+    setMedDoor(taskText);
+    commit({
+      ...data,
+      taskLog: [{ id: uid(), text: taskText, how: "door", list: deckKey, ts: Date.now() }, ...(data.taskLog || [])],
+    });
+    startMeditation(120, null);
   };
 
   // ————— the gap interview —————
@@ -817,7 +845,7 @@ function App() {
   };
 
   const startMeditation = (seconds, item) => {
-    markTried(item);
+    if (item) markTried(item);
     setMedOrigin(view.state === "fullmind" ? "fullmind" : "nope");
     try {
       // create the audio context on the tap so the end-chime is allowed
@@ -843,6 +871,7 @@ function App() {
     setMedTotal(0);
     setMedLeft(0);
     setMedDone(false);
+    setMedDoor(null);
   };
 
   const releaseDump = () => {
@@ -1418,7 +1447,15 @@ function App() {
   const thisWeek = data.workouts.filter((w) => w.ts >= weekStart);
   const weekMiles = thisWeek.reduce((a, w) => a + (w.miles || 0), 0);
   const weekRuns = thisWeek.filter((w) => w.kind === "trail").length;
-  const weekOtf = thisWeek.filter((w) => w.kind === "otf").length;
+  // OTF is judged on the rolling last 7 days, not the calendar week
+  const otfIn = (fromAgo, toAgo) =>
+    data.workouts.filter(
+      (w) => w.kind === "otf" && w.ts <= now - toAgo * 86400e3 && w.ts > now - fromAgo * 86400e3
+    ).length;
+  const weekOtf = otfIn(7, 0);
+  const priorOtf = otfIn(14, 7);
+  const otfCap = priorOtf + 1; // ramp no faster than one extra class per week
+  const otfGoal = Number(S.otfTarget) || 3;
 
   const lastOtf = data.workouts
     .filter((w) => w.kind === "otf")
@@ -1479,13 +1516,19 @@ function App() {
   const mileTarget = Math.max(prior14 * RAMP, mileFloor);
   const mileLeft = Math.max(0, mileTarget - last14);
   const overCeiling = last14 > mileTarget;
+  // what falls out of the window next (oldest first)
+  const rollOffs = data.workouts
+    .filter((w) => (w.miles || 0) > 0 && w.ts > now - 14 * 86400e3 && w.ts <= now)
+    .sort((a, b) => a.ts - b.ts)
+    .slice(0, 3)
+    .map((w) => ({ miles: w.miles, at: w.ts + 14 * 86400e3 }));
+  const weekday = (ts) => new Date(ts).toLocaleDateString(undefined, { weekday: "short" });
   const muscleZone = (k) => {
     const ts = lastBlast[k];
     const d = ts ? Math.floor((now - ts) / 86400e3) : null;
-    if (k === "abs") return d !== null && d <= 7 ? "go" : "fallow";
-    if (d === null || d > 7) return "fallow";
+    if (d === null || d >= 7) return "fallow";
+    if (k === "abs") return "go";
     if (d <= 1) return "rest";
-    if (d <= 3) return "soon";
     return "go";
   };
   const ZONES = {
@@ -1629,7 +1672,7 @@ function App() {
                 : `- ${t} · Trail run — ${e.miles.toFixed(1)} mi${e.minutes ? `, ${e.minutes} min` : ""}`
             );
           } else if (e.type === "task") {
-            lines.push(`- ${t} · ${e.how === "done" ? "✓ Done" : "↻ Progressed"}: ${e.text}`);
+            lines.push(`- ${t} · ${e.how === "done" ? "✓ Done" : e.how === "door" ? "⚿ Two-minute door" : "↻ Progressed"}: ${e.text}`);
           } else if (e.type === "gap") {
             lines.push(`- ${t} · ⌛ ${e.activity} — ${fmtDur(e.to - e.ts)}${e.state ? ` (in ${STATES[e.state] ? STATES[e.state].name : e.state})` : ""}`);
           } else {
@@ -1791,7 +1834,7 @@ function App() {
     if (daysSinceOtf !== null && daysSinceOtf >= 4) {
       msg = `${daysSinceOtf} days since OTF — long gaps make the next one harder. Go today if you're able.`;
     } else if (weekOtf < (Number(S.otfTarget) || 3)) {
-      msg = `Body willing? Movement is the fastest exit — an OTF session (${weekOtf}/${S.otfTarget} this week) or easy miles.`;
+      msg = `Body willing? Movement is the fastest exit — an OTF session (${weekOtf}/${otfGoal} in the last 7 days) or easy miles.`;
     } else {
       msg = "Body willing? Easy miles reset everything.";
     }
@@ -1887,6 +1930,66 @@ function App() {
     </div>
   );
 
+  // ————— signal: what the book asks at the moment of a check-in —————
+  const SignalCard = () => {
+    const c = data.checkins.find((x) => x.id === activeCheckin);
+    if (!c || now - c.ts > 45 * 60e3) return null;
+    const isNope = c.state === "nope";
+    const needEnergy = !c.energy;
+    const needFlavor = isNope && !c.flavor;
+    const needBefore = isNope && !c.before;
+    const needShift = c.exitFrom === "nope" && !c.shift;
+    if (!needEnergy && !needFlavor && !needBefore && !needShift) return null;
+    const row = (label, opts, key, color) => (
+      <div className="mt-2">
+        <p style={{ ...mono(9) }}>{label}</p>
+        <div className="flex mt-1" style={{ flexWrap: "wrap", gap: 6 }}>
+          {opts.map((o) => (
+            <button key={o} onClick={() => setCheckinField(c.id, key, o)} className="px-2 py-1" style={chip(c[key] === o, color)}>
+              {String(o).toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+    return (
+      <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.rubric}` }}>
+        <div className="flex items-center justify-between">
+          <p style={{ ...mono(10, T.rubric) }}>¶ SIGNAL · FIVE SECONDS</p>
+          <button
+            onClick={() => setCheckinField(c.id, "energy", c.energy || 0)}
+            style={{ ...mono(9), background: "transparent" }}
+          >
+            SKIP
+          </button>
+        </div>
+        {needShift && row("WHAT SHIFTED YOU OUT OF NOPE?", EXIT_SHIFTS, "shift", T.ww)}
+        {needFlavor && row("WHAT FLAVOR OF NOPE?", NOPE_FLAVORS, "flavor", T.np)}
+        {needBefore && row("RIGHT BEFORE THIS?", NOPE_BEFORE, "before", T.np)}
+        {needEnergy && row("ENERGY", [1, 2, 3, 4, 5], "energy", STATES[c.state] ? STATES[c.state].color : T.ink)}
+      </div>
+    );
+  };
+
+  const DoorCard = () => {
+    const c = data.checkins.find((x) => x.id === activeCheckin);
+    const front = workTask(deckKey, "fullmind") || workTask(deckKey, "wuwei");
+    const target = (c && c.avoiding) || (front && !front.virtual ? front.text : null);
+    if (!target) return null;
+    return (
+      <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+        <p style={{ ...mono(10, T.fm) }}>¶ THE DOOR</p>
+        <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+          Two minutes on <span style={{ fontWeight: 700 }}>{target}</span> — then you may come
+          straight back to Nope. That's the whole deal.
+        </p>
+        <button onClick={() => startDoor(target)} className="w-full py-2 mt-2" style={btnInk}>
+          OPEN THE DOOR · 2 MIN
+        </button>
+      </div>
+    );
+  };
+
   const StateHeader = ({ s, line }) => (
     <div className="mb-5">
       <div className="flex items-center gap-3">
@@ -1970,6 +2073,7 @@ function App() {
         s={STATES.fullmind}
         line="Logged. Don't force the work — set things down first, then flow."
       />
+      {SignalCard()}
       {MoveFirst()}
       {(() => {
         const ft = workTask(deckKey, "fullmind");
@@ -2039,6 +2143,7 @@ function App() {
       <div>
         <BackLink />
         <StateHeader s={STATES.wuwei} line="You're in it. Don't spend it deciding — spend it moving." />
+        {SignalCard()}
         {cur ? (
           <div>
             <div
@@ -2145,6 +2250,8 @@ function App() {
           s={STATES.nope}
           line="Noted, no judgment. Work the stack from the top. Stop the moment something shifts."
         />
+        {SignalCard()}
+        {DoorCard()}
         {MoveFirst()}
         {(() => {
           const u =
@@ -3115,7 +3222,7 @@ function App() {
         {[
           { label: "MILES / WK", val: weekMiles.toFixed(1) },
           { label: "TRAIL RUNS", val: weekRuns },
-          { label: "OTF / WK", val: `${weekOtf}/${S.otfTarget}` },
+          { label: "OTF / 7D", val: `${weekOtf}/${otfGoal}` },
         ].map((s, i) => (
           <div key={i} className="flex-1 px-2 py-3 text-center" style={card}>
             <p style={{ fontFamily: FONT.disp, fontSize: 25, color: T.ink }}>{s.val}</p>
@@ -3127,7 +3234,7 @@ function App() {
       {/* otf rhythm */}
       <div className="px-4 py-3 mb-4 flex items-center gap-3" style={card}>
         <div className="flex gap-1 shrink-0">
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: Math.max(otfGoal, weekOtf) }).map((_, i) => (
             <Blaze key={i} color={i < weekOtf ? T.fm : T.lineSoft} size={16} />
           ))}
         </div>
@@ -3149,9 +3256,11 @@ function App() {
               lineHeight: 1.45,
             }}
           >
-            {daysSinceOtf !== null && daysSinceOtf >= 4
+            {weekOtf >= otfCap
+              ? `${weekOtf} in the last 7 days — the ramp cap is ${otfCap} (last week ${priorOtf} + 1). No more until one rolls off.`
+              : daysSinceOtf !== null && daysSinceOtf >= 4
               ? "Long gap — the next class gets harder every day. Get one in soon."
-              : `Short gaps keep it easier. Build toward ${S.otfTarget} a week.`}
+              : `${weekOtf}/${otfGoal} in the last 7 days · cap ${otfCap} this week. Short gaps keep it easier.`}
           </p>
         </div>
       </div>
@@ -3313,7 +3422,8 @@ function App() {
         </span>
       </div>
       <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${overCeiling ? T.np : T.ww}` }}>
-        <div style={{ height: 8, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2 }}>
+        <p style={{ ...mono(9) }}>14 DAYS ENDING TODAY, {weekday(now).toUpperCase()} · SLIDES DAILY</p>
+        <div className="mt-2" style={{ height: 8, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 2 }}>
           <div
             style={{
               height: "100%",
@@ -3327,6 +3437,15 @@ function App() {
             ? `Past the ceiling by ${(last14 - mileTarget).toFixed(1)} mi. Hold here — no more miles this fortnight.`
             : `${mileLeft.toFixed(1)} mi left in the ceiling. Go no further than ${mileTarget.toFixed(1)} mi over these 14 days.`}
         </p>
+        {rollOffs.length > 0 && (
+          <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
+            Rolling off:{" "}
+            {rollOffs
+              .map((r) => `${r.miles.toFixed(1)} mi ${fmtDay(r.at) === "Today" ? "today" : fmtDay(r.at) === "Tomorrow" ? "tomorrow" : weekday(r.at)}`)
+              .join(" · ")}
+            . Room opens as they fall away.
+          </p>
+        )}
         <p className="mt-1" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 10.5, color: T.sub, lineHeight: 1.5 }}>
           A ceiling, not a goal — the previous fortnight ({prior14.toFixed(1)} mi) plus a hard
           ramp, never below your floor of {mileFloor} mi. Reaching it early means rest, not more.
@@ -3364,9 +3483,8 @@ function App() {
           })}
         </div>
         <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 10.5, color: T.sub, lineHeight: 1.5 }}>
-          REST — worked within a day; leave it be (abs never rest). SOON — two to three days,
-          nearly recovered. GO — four to seven days: stress it. FALLOW — past seven days, a field
-          left unplowed too long.
+          REST — worked today or yesterday; leave it be (abs never rest). GO — two to six days
+          since, ready to stress. FALLOW — a week or more, or never; do it today.
         </p>
       </div>
 
@@ -3564,7 +3682,7 @@ function App() {
                         <span style={{ fontWeight: 600 }}>{e.text}</span>
                         <span style={{ color: T.sub, fontSize: 11.5 }}>
                           {" "}
-                          · {e.how === "done" ? "done" : "progressed"} · {e.list}
+                          · {e.how === "done" ? "done" : e.how === "door" ? "two-minute door" : "progressed"} · {e.list}
                         </span>
                       </span>
                     )}
@@ -3582,6 +3700,18 @@ function App() {
                   {e.type === "checkin" && e.avoiding && (
                     <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.np, marginTop: 2 }}>
                       avoiding: {e.avoiding}
+                    </p>
+                  )}
+                  {e.type === "checkin" && (e.energy || e.flavor || e.before || e.shift) && (
+                    <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, marginTop: 2 }}>
+                      {[
+                        e.energy ? `energy ${e.energy}` : null,
+                        e.flavor ? `flavor: ${e.flavor.toLowerCase()}` : null,
+                        e.before ? `before: ${e.before.toLowerCase()}` : null,
+                        e.shift ? `out via: ${e.shift.toLowerCase()}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   )}
                   {e.type === "checkin" && e.tried && e.tried.length > 0 && (
@@ -4109,8 +4239,13 @@ function App() {
                 className="mt-6 text-center"
                 style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 14, color: T.sub }}
               >
-                Nothing to do. Nowhere to be.
+                {medDoor ? "Two minutes. Just begin." : "Nothing to do. Nowhere to be."}
               </p>
+              {medDoor && (
+                <p className="mt-1 text-center px-6" style={{ fontFamily: FONT.body, fontSize: 13, fontWeight: 600, color: T.ink }}>
+                  {medDoor}
+                </p>
+              )}
               <p
                 className="mt-2 text-center"
                 style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 10.5, color: T.sub, opacity: 0.8 }}
