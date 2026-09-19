@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260918-143344 -->
+<!-- build 20260919-065138 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -25,6 +25,7 @@
 .px-3{padding-left:0.75rem;padding-right:0.75rem}
 .px-4{padding-left:1rem;padding-right:1rem}
 .px-5{padding-left:1.25rem;padding-right:1.25rem}
+.px-6{padding-left:1.5rem;padding-right:1.5rem}
 .px-8{padding-left:2rem;padding-right:2rem}
 .py-1{padding-top:0.25rem;padding-bottom:0.25rem}
 .py-2{padding-top:0.5rem;padding-bottom:0.5rem}
@@ -56,7 +57,6 @@
 .fixed{position:fixed}.bottom-0{bottom:0}.left-0{left:0}.right-0{right:0}
 .transition{transition:opacity .15s ease,transform .15s ease,background-color .15s ease,border-color .15s ease}
 .active\:translate-y-px:active{transform:translateY(1px)}
-.px-6{padding-left:1.5rem;padding-right:1.5rem}
 html,body{background:#E7D9AE}
 #boot{display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Georgia,serif;color:#6E5A38;font-style:italic}
 </style>
@@ -212,6 +212,7 @@ const WW_MOVES = [
 
 const OTF_TARGET = 3; // sessions per week
 const OTF_DEFAULT_MILES = 2.5; // treadmill miles in a typical class
+const LATER_BENCH_MS = 3 * 3600e3; // Later keeps a task off the deck this long
 const GAP_MIN_MS = 2 * 3600e3; // ask about any absence longer than this
 const GAP_ACTIVITIES = [
   "Slept",
@@ -808,6 +809,11 @@ function App() {
     setGapOther("");
     if (to >= Date.now() - 60e3) gapFinish(entries);
   };
+  const gapAway = () => {
+    if (!gap) return;
+    const entries = [...gap.entries, { activity: "Retreat / Away", from: gap.cursor, to: Date.now(), away: true }];
+    gapFinish(entries);
+  };
   const gapUndo = () => {
     if (!gap || !gap.entries.length) return;
     const entries = gap.entries.slice(0, -1);
@@ -821,7 +827,8 @@ function App() {
         activity: e.activity,
         ts: e.from,
         to: e.to,
-        state: stateAt(e.from),
+        state: e.away ? "away" : stateAt(e.from),
+        away: !!e.away,
       }));
       commit({ ...data, gaps: [...rows, ...(data.gaps || [])] });
       ping(rows.length + " logged");
@@ -1134,11 +1141,13 @@ function App() {
             mind: "fullmind",
           });
         });
-    const urgents = [...open.filter((t) => effImp(t) === "urgent"), ...meetVirtuals];
+    // tasks sent back with Later sit out of the auto-deal for a while
+    const free = open.filter((t) => !(t.benchUntil && t.benchUntil > now));
+    const urgents = [...free.filter((t) => effImp(t) === "urgent"), ...meetVirtuals];
     const metaTasks = virtuals.filter((v) => v.mind === mind);
     const candidates = [
-      ...open.filter((t) => effImp(t) === "important" && t.mind === mind),
-      ...open.filter((t) => effImp(t) === "normal" && t.mind === mind),
+      ...free.filter((t) => effImp(t) === "important" && t.mind === mind),
+      ...free.filter((t) => effImp(t) === "normal" && t.mind === mind),
     ];
     // urgents take the front, then the book's own meta-tasks, then your pins
     const deck = [...urgents.slice(0, 2), ...metaTasks.slice(0, 1)];
@@ -1186,7 +1195,16 @@ function App() {
     const cur = (data.top3 && data.top3[key]) || [];
     const on = cur.includes(id);
     const next = on ? cur.filter((x) => x !== id) : [...cur, id].slice(-3);
-    commit({ ...data, top3: { ...data.top3, [key]: next } });
+    commit({
+      ...data,
+      top3: { ...data.top3, [key]: next },
+      tasks: on
+        ? data.tasks
+        : {
+            ...data.tasks,
+            [key]: (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, benchUntil: null } : t)),
+          },
+    });
     ping(on ? "Off the deck" : "On the deck");
   };
   const frontTask = (key, id, mind) => {
@@ -1298,7 +1316,17 @@ function App() {
       x.id === id ? { ...x, state: how === "done" ? "done" : "reentered", resolved: Date.now() } : x
     );
     if (how === "later")
-      next = [...next, { ...t, id: uid(), state: "open", resolved: undefined, created: Date.now() }];
+      next = [
+        ...next,
+        {
+          ...t,
+          id: uid(),
+          state: "open",
+          resolved: undefined,
+          created: Date.now(),
+          benchUntil: Date.now() + LATER_BENCH_MS,
+        },
+      ];
     const entry = {
       id: uid(),
       text: t.text,
@@ -1314,7 +1342,7 @@ function App() {
       held: clearHeld(key, id),
       front: { ...data.front, [key]: (data.front && data.front[key]) === id ? null : (data.front || {})[key] },
     });
-    ping(how === "done" ? "Done" : "Re-entered");
+    ping(how === "done" ? "Done" : "Back in the pile — off the deck for a while");
   };
   const deleteTask = (key, id) => setTasks(key, (data.tasks[key] || []).filter((t) => t.id !== id));
   const demoteTask = (key, id) =>
@@ -1553,7 +1581,19 @@ function App() {
       iv.push({ start, end: capped, state: cs[i].state });
       if (end > capped) iv.push({ start: capped, end, state: "nope" });
     }
-    return iv;
+    const away = (data.gaps || []).filter((g) => g.away);
+    if (!away.length) return iv;
+    let out = iv;
+    away.forEach((a) => {
+      const next = [];
+      out.forEach((seg) => {
+        if (seg.end <= a.ts || seg.start >= a.to) return next.push(seg);
+        if (seg.start < a.ts) next.push({ ...seg, end: a.ts });
+        if (seg.end > a.to) next.push({ ...seg, start: a.to });
+      });
+      out = next;
+    });
+    return out;
   })();
 
   const dayTallies = (() => {
@@ -1674,7 +1714,7 @@ function App() {
           } else if (e.type === "task") {
             lines.push(`- ${t} · ${e.how === "done" ? "✓ Done" : e.how === "door" ? "⚿ Two-minute door" : "↻ Progressed"}: ${e.text}`);
           } else if (e.type === "gap") {
-            lines.push(`- ${t} · ⌛ ${e.activity} — ${fmtDur(e.to - e.ts)}${e.state ? ` (in ${STATES[e.state] ? STATES[e.state].name : e.state})` : ""}`);
+            lines.push(`- ${t} · ⌛ ${e.activity} — ${fmtDur(e.to - e.ts)}${e.away ? " (intentional)" : e.state ? ` (in ${STATES[e.state] ? STATES[e.state].name : e.state})` : ""}`);
           } else {
             lines.push(`- ${t} · Note: ${e.text}`);
           }
@@ -3019,6 +3059,7 @@ function App() {
                         <span style={{ color: T.sub, fontSize: 10.5 }}>
                           {" "}· {mindLetterMap[t.mind] || "F"}
                           {isPinned ? " · deck" : ""}
+                          {t.benchUntil && t.benchUntil > now ? " · later" : ""}
                           {t.urgentAt && effImp(t) !== "urgent"
                             ? ` · ⚑${new Date(t.urgentAt).getMonth() + 1}/${new Date(t.urgentAt).getDate()}`
                             : ""}
@@ -3649,7 +3690,7 @@ function App() {
                     </span>
                   )}
                   {e.type === "gap" && (
-                    <span style={{ fontFamily: FONT.body, fontSize: 12, color: e.state && STATES[e.state] ? STATES[e.state].color : T.sub }}>⌛</span>
+                    <span style={{ fontFamily: FONT.body, fontSize: 12, color: e.away ? T.ww : e.state && STATES[e.state] ? STATES[e.state].color : T.sub }}>{e.away ? "⛰" : "⌛"}</span>
                   )}
                 </span>
                 <div className="flex-1">
@@ -3692,7 +3733,11 @@ function App() {
                         <span style={{ color: T.sub, fontSize: 11.5 }}>
                           {" "}
                           · {fmtDur(e.to - e.ts)}
-                          {e.state && STATES[e.state] ? ` · in ${STATES[e.state].name}` : ""}
+                          {e.away
+                            ? " · intentional"
+                            : e.state && STATES[e.state]
+                            ? ` · in ${STATES[e.state].name}`
+                            : ""}
                         </span>
                       </span>
                     )}
@@ -4142,6 +4187,9 @@ function App() {
               {gap.entries.length ? ", then" : ""} what were you doing?
               <span style={{ color: T.sub, fontSize: 11.5 }}> · {fmtDur(Date.now() - gap.cursor)} still to account for</span>
             </p>
+            <button onClick={gapAway} className="w-full py-2 mt-2" style={btnWwOutline}>
+              ⛰ RETREAT / AWAY — ALL OF IT, ON PURPOSE
+            </button>
             <div className="flex gap-3 mt-2">
               <div className="flex-1 flex flex-col gap-1" style={{ maxHeight: 210, overflowY: "auto" }}>
                 {[...GAP_ACTIVITIES, "Other"].map((a) => (
