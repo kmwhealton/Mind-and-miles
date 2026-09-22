@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260919-065138 -->
+<!-- build 20260922-124004 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -279,6 +279,8 @@ const DEFAULTS = {
   held: { work: {}, home: {} },
   front: { work: null, home: null },
   gaps: [],
+  aiGaps: [],
+  aiSnooze: null,
   meetings: [],
 };
 
@@ -467,6 +469,9 @@ function App() {
   const [schedDate, setSchedDate] = useState("");
   const [lastMetFor, setLastMetFor] = useState(null);
   const [lastMetDate, setLastMetDate] = useState("");
+  const [aiText, setAiText] = useState("");
+  const [aiEditId, setAiEditId] = useState(null);
+  const [aiEditText, setAiEditText] = useState("");
   const [gap, setGap] = useState(null); // {start, cursor, entries:[{activity,from,to}]}
   const [gapAct, setGapAct] = useState(null);
   const [gapOther, setGapOther] = useState("");
@@ -557,6 +562,8 @@ function App() {
                 ? parsed.front
                 : { work: null, home: null };
             merged.gaps = Array.isArray(parsed.gaps) ? parsed.gaps : [];
+            merged.aiGaps = Array.isArray(parsed.aiGaps) ? parsed.aiGaps : [];
+            merged.aiSnooze = parsed.aiSnooze || null;
             if (!parsed.taskRev || parsed.taskRev < 3) {
               const up = (arr) =>
                 (arr || []).map((t) => ({
@@ -1045,6 +1052,7 @@ function App() {
         dumps: byId(p.dumps, data.dumps),
         taskLog: byId(p.taskLog, data.taskLog),
         gaps: byId(p.gaps, data.gaps),
+        aiGaps: mergeTasks(p.aiGaps, data.aiGaps),
         stacks: p.stacks && p.stacks.work && p.stacks.off ? p.stacks : data.stacks,
         tasks: {
           work: mergeTasks(p.tasks && p.tasks.work, data.tasks.work),
@@ -1124,10 +1132,22 @@ function App() {
         imp: "important",
         mind: "wuwei",
       });
+    if (key === "work" && mind !== "nope" && !(data.aiSnooze && data.aiSnooze > now)) {
+      const openGaps = (data.aiGaps || []).filter((g) => !g.solved).length;
+      virtuals.push({
+        id: "aigaps",
+        virtual: "aigaps",
+        text:
+          "Improve AI productivity" +
+          (openGaps ? " · " + openGaps + " gap" + (openGaps === 1 ? "" : "s") + " on the list" : ""),
+        imp: "important",
+        mind: mind,
+      });
+    }
     const meetVirtuals = [];
     if (key === "work")
       meetingsDue()
-        .slice(0, 2)
+        .slice(0, 3)
         .forEach((m) => {
           const n = (m.agenda || []).length;
           meetVirtuals.push({
@@ -1143,19 +1163,29 @@ function App() {
         });
     // tasks sent back with Later sit out of the auto-deal for a while
     const free = open.filter((t) => !(t.benchUntil && t.benchUntil > now));
-    const urgents = [...free.filter((t) => effImp(t) === "urgent"), ...meetVirtuals];
+    const realUrgent = free.filter((t) => effImp(t) === "urgent");
+    // the front two slots: your urgent tasks and the meetings, one of each first,
+    // so a pile of urgent tasks can never hide the meetings that need setting up
+    const front2 = [];
+    if (realUrgent[0]) front2.push(realUrgent[0]);
+    if (meetVirtuals[0]) front2.push(meetVirtuals[0]);
+    for (const c of [...realUrgent.slice(1), ...meetVirtuals.slice(1)]) {
+      if (front2.length >= 2) break;
+      if (!front2.some((x) => x.id === c.id)) front2.push(c);
+    }
+    const urgents = [...realUrgent, ...meetVirtuals];
     const metaTasks = virtuals.filter((v) => v.mind === mind);
     const candidates = [
       ...free.filter((t) => effImp(t) === "important" && t.mind === mind),
       ...free.filter((t) => effImp(t) === "normal" && t.mind === mind),
     ];
     // urgents take the front, then the book's own meta-tasks, then your pins
-    const deck = [...urgents.slice(0, 2), ...metaTasks.slice(0, 1)];
+    const deck = [...front2, ...metaTasks.slice(0, 1)];
     for (const p of pinned) {
       if (deck.length >= 3) break;
       if (!deck.some((d) => d.id === p.id)) deck.push(p);
     }
-    for (const c of [...urgents.slice(2), ...metaTasks.slice(1), ...candidates]) {
+    for (const c of [...urgents, ...metaTasks.slice(1), ...candidates]) {
       if (deck.length >= 3) break;
       if (!deck.some((d) => d.id === c.id)) deck.push(c);
     }
@@ -1178,6 +1208,7 @@ function App() {
     setView({ name: "tasks" });
     if (v.virtual === "cull") setCullOpen(true);
     else if (v.virtual === "meet") setMeetView(true);
+    else if (v.virtual === "aigaps") setView({ name: "aigaps" });
     else if (v.virtual === "sort") {
       setQaImp("important");
       setQaMind("fullmind");
@@ -1190,6 +1221,45 @@ function App() {
       setTaskView(deckKey);
       setView({ name: "tasks" });
     }
+  };
+  // ————— AI productivity gaps —————
+  const setAiGaps = (list) => commit({ ...data, aiGaps: list });
+  const addAiGap = () => {
+    const v = aiText.trim();
+    if (!v) return;
+    setAiGaps([...(data.aiGaps || []), { id: uid(), text: v, created: Date.now(), solved: null, taskId: null }]);
+    setAiText("");
+    ping("Noted");
+  };
+  const deleteAiGap = (id) => setAiGaps((data.aiGaps || []).filter((g) => g.id !== id));
+  const toggleAiSolved = (id) =>
+    setAiGaps(
+      (data.aiGaps || []).map((g) => (g.id === id ? { ...g, solved: g.solved ? null : Date.now() } : g))
+    );
+  const saveAiEdit = (id) => {
+    const v = aiEditText.trim();
+    if (!v) return;
+    setAiGaps((data.aiGaps || []).map((g) => (g.id === id ? { ...g, text: v } : g)));
+    setAiEditId(null);
+    ping("Amended");
+  };
+  const workOnGap = (g) => {
+    const t = newTaskObj("AI gap: " + g.text, "important", "fullmind", null, false);
+    const rest = ((data.top3 && data.top3.work) || []).filter((x) => x !== t.id);
+    commit({
+      ...data,
+      tasks: { ...data.tasks, work: [...(data.tasks.work || []), t] },
+      aiGaps: (data.aiGaps || []).map((x) => (x.id === g.id ? { ...x, taskId: t.id } : x)),
+      top3: { ...data.top3, work: [t.id, ...rest].slice(0, 3) },
+      front: { ...data.front, work: t.id },
+    });
+    setTaskView("work");
+    setView({ name: "tasks" });
+    ping("Front of the work deck");
+  };
+  const snoozeAiGaps = () => {
+    commit({ ...data, aiSnooze: startOfDay(now) + 86400e3 });
+    ping("Not today — back tomorrow");
   };
   const pinToggle = (key, id) => {
     const cur = (data.top3 && data.top3[key]) || [];
@@ -1830,7 +1900,7 @@ function App() {
     const active =
       view.name === id ||
       (id === "now" && (view.name === "state" || view.name === "stack")) ||
-      (id === "more" && ["more", "train", "log", "settings"].includes(view.name));
+      (id === "more" && ["more", "train", "log", "settings", "aigaps"].includes(view.name));
     return (
       <button
         onClick={() => setView({ name: id })}
@@ -2919,8 +2989,15 @@ function App() {
                     ? "OPEN THE CULL"
                     : front.virtual === "meet"
                     ? "OPEN THE ROSTER"
+                    : front.virtual === "aigaps"
+                    ? "OPEN THE GAPS"
                     : "START SORTING"}
                 </button>
+                {front.virtual === "aigaps" && (
+                  <button onClick={snoozeAiGaps} className="w-full py-2 mt-2" style={btnGhost}>
+                    ↻ NOT TODAY
+                  </button>
+                )}
                 {front.virtual === "meet" && (
                   <button
                     onClick={() => snoozeMeeting(front.id.slice(5))}
@@ -2980,6 +3057,21 @@ function App() {
                 {editTaskId === t.id && editFrom === "deck" && TaskEditor()}
               </div>
             ))}
+            {(() => {
+              if (activeKey !== "work") return null;
+              const dueN = meetingsDue().length;
+              const onDeck = deck.filter((t) => t.virtual === "meet").length;
+              if (dueN <= onDeck) return null;
+              return (
+                <button
+                  onClick={() => setMeetView(true)}
+                  className="mt-2"
+                  style={{ ...mono(9, T.np), background: "transparent" }}
+                >
+                  ⚑ {dueN - onDeck} MORE MEETING{dueN - onDeck === 1 ? "" : "S"} TO SET UP →
+                </button>
+              );
+            })()}
           </div>
         ) : (
           <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
@@ -3973,9 +4065,142 @@ function App() {
     </div>
   );
 
+  const AiGapsView = () => {
+    const list = data.aiGaps || [];
+    const live = list.filter((g) => !g.solved);
+    const solved = list.filter((g) => g.solved);
+    const statusOf = (g) => {
+      if (!g.taskId) return null;
+      const t = (data.tasks.work || []).find((x) => x.id === g.taskId);
+      if (!t) return null;
+      return t.state === "open" ? "on the deck" : t.state === "done" ? "worked" : "re-entered";
+    };
+    const rows = (arr, dim) =>
+      arr.map((g) => {
+        const isEd = aiEditId === g.id;
+        const st = statusOf(g);
+        return (
+          <div key={g.id} className="px-4 py-3" style={{ ...card, opacity: dim ? 0.55 : 1 }}>
+            {isEd ? (
+              <div className="flex flex-col gap-2">
+                <input
+                  value={aiEditText}
+                  onChange={(e) => setAiEditText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveAiEdit(g.id);
+                  }}
+                  autoFocus
+                  className="w-full px-2 py-1"
+                  style={{ ...inputS13, fontSize: 13.5 }}
+                />
+                <div className="flex gap-2">
+                  <button onClick={() => saveAiEdit(g.id)} className="flex-1 py-2" style={btnInk}>
+                    SAVE
+                  </button>
+                  <button onClick={() => setAiEditId(null)} className="flex-1 py-2" style={btnGhost}>
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 mt-1" style={{ fontFamily: FONT.body, fontSize: 12, color: g.solved ? T.ww : T.np }}>
+                    {g.solved ? "✓" : "✗"}
+                  </span>
+                  <span
+                    className="flex-1"
+                    style={{
+                      fontFamily: FONT.body,
+                      fontSize: 13.5,
+                      color: T.ink,
+                      lineHeight: 1.45,
+                      textDecoration: g.solved ? "line-through" : "none",
+                    }}
+                  >
+                    {g.text}
+                    {st && <span style={{ color: T.sub, fontSize: 11 }}> · {st}</span>}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setAiEditId(g.id);
+                      setAiEditText(g.text);
+                    }}
+                    className="shrink-0"
+                    style={{ ...mono(11, T.rubric), background: "transparent" }}
+                  >
+                    ✎
+                  </button>
+                  <button onClick={() => deleteAiGap(g.id)} className="shrink-0" style={{ ...mono(11), background: "transparent" }}>
+                    ✕
+                  </button>
+                </div>
+                <div className="flex gap-2 mt-2 items-center">
+                  {!g.solved && (
+                    <button onClick={() => workOnGap(g)} className="flex-1 py-2" style={btnWwOutline}>
+                      WORK ON THIS NEXT ↑
+                    </button>
+                  )}
+                  <button onClick={() => toggleAiSolved(g.id)} className="px-3 py-2 shrink-0" style={btnGhost}>
+                    {g.solved ? "REOPEN" : "SOLVED ✓"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      });
+    return (
+      <div>
+        <BackLink label="← back" to={{ name: "more" }} />
+        <div className="flex items-center justify-between mb-2">
+          <Rubric>AI PRODUCTIVITY GAPS</Rubric>
+          <span style={{ ...mono(9) }}>{live.length} OPEN</span>
+        </div>
+        <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
+          What you want AI to do for you at work and it cannot do yet. Any one of them can become
+          the next task on the work deck. Mark it solved when the gap closes — the list turns into
+          a record of what changed.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={aiText}
+            onChange={(e) => setAiText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addAiGap();
+            }}
+            placeholder="What can't it do yet…"
+            className="flex-1 px-3 py-2"
+            style={inputS14}
+          />
+          <button
+            onClick={addAiGap}
+            className="px-4 shrink-0"
+            style={{ ...mono(11, T.ink), background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2 }}
+          >
+            ADD
+          </button>
+        </div>
+        <div className="flex flex-col gap-2">
+          {list.length === 0 && (
+            <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
+              Nothing on the list yet. Add the first gap above.
+            </p>
+          )}
+          {rows(live, false)}
+          {solved.length > 0 && (
+            <p className="mt-2" style={{ ...mono(9, T.ww) }}>CLOSED — {solved.length}</p>
+          )}
+          {rows(solved, true)}
+        </div>
+      </div>
+    );
+  };
+
   const MoreView = () => (
     <div className="flex flex-col gap-2">
       {[
+        { label: "AI Gaps", to: "aigaps", desc: "What AI cannot do for me yet" },
         { label: "Training", to: "train", desc: "The quest, sessions, miles" },
         { label: "Chronicle", to: "log", desc: "Hours, history, safekeeping" },
         { label: "Settings", to: "settings", desc: "Hours, caps, and rhythms" },
@@ -4253,6 +4478,7 @@ function App() {
         {view.name === "log" && LogView()}
         {view.name === "more" && MoreView()}
         {view.name === "settings" && SettingsView()}
+        {view.name === "aigaps" && AiGapsView()}
       </div>
 
       {/* meditation overlay */}
