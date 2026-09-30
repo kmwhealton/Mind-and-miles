@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260922-124004 -->
+<!-- build 20260930-043126 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -142,8 +142,10 @@ const DEFAULT_SETTINGS = {
   otfMiles: 2.5,
   impCap: 30,
   mileFloor: 20,
+  reviewAt: "08:00",
   autoOpen: true,
 };
+const DAILY_REVIEW_TEXT = "Review notes for actions";
 const isWorkHours = (s = DEFAULT_SETTINGS, d = new Date()) => {
   const day = d.getDay(); // 0 Sun … 6 Sat
   if (day === 0 || day === 6) return false;
@@ -470,6 +472,7 @@ function App() {
   const [lastMetFor, setLastMetFor] = useState(null);
   const [lastMetDate, setLastMetDate] = useState("");
   const [aiText, setAiText] = useState("");
+  const [minuteTick, setMinuteTick] = useState(0);
   const [aiEditId, setAiEditId] = useState(null);
   const [aiEditText, setAiEditText] = useState("");
   const [gap, setGap] = useState(null); // {start, cursor, entries:[{activity,from,to}]}
@@ -1222,6 +1225,34 @@ function App() {
       setView({ name: "tasks" });
     }
   };
+  // ————— the daily review —————
+  // at the appointed hour each day, an urgent task appears on the work deck
+  useEffect(() => {
+    if (!loaded) return;
+    const at = String(S.reviewAt || "").trim();
+    if (!at) return;
+    const parts = at.split(":");
+    const due = new Date();
+    due.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
+    if (Date.now() < due.getTime()) return;
+    const stamp = "review:" + due.toDateString();
+    const work = data.tasks.work || [];
+    if (work.some((t) => t.daily === stamp)) return;
+    // yesterday's untouched copy doesn't pile up
+    const kept = work.filter((t) => !(t.daily && String(t.daily).startsWith("review:") && t.state === "open"));
+    const fresh = {
+      ...newTaskObj(DAILY_REVIEW_TEXT, "urgent", "fullmind", null, false),
+      daily: stamp,
+      created: due.getTime(),
+    };
+    commit({ ...data, tasks: { ...data.tasks, work: [...kept, fresh] } });
+  }, [loaded, minuteTick, data, S.reviewAt]);
+
+  useEffect(() => {
+    const t = setInterval(() => setMinuteTick((x) => x + 1), 60e3);
+    return () => clearInterval(t);
+  }, []);
+
   // ————— AI productivity gaps —————
   const setAiGaps = (list) => commit({ ...data, aiGaps: list });
   const addAiGap = () => {
@@ -4246,6 +4277,7 @@ function App() {
           {row("OTF TREAD MILES", "otfMiles")}
           {row("IMPORTANT CAP", "impCap")}
           {row("MILES FLOOR / 14 DAYS", "mileFloor")}
+          {row("DAILY REVIEW AT", "reviewAt", "time")}
           <button
             onClick={() => setSetting("autoOpen", S.autoOpen === false ? true : false)}
             className="flex items-center justify-between px-4 py-3 w-full"
