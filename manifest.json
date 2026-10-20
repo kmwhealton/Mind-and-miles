@@ -33,16 +33,4 @@
       "url": "url"
     }
   },
-  "shortcuts": [
-    {
-      "name": "Tasks",
-      "url": "./?view=tasks",
-      "icons": [
-        {
-          "src": "./icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    }
-  ]
 }
