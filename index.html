@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20260930-043126 -->
+<!-- build 20261020-051247 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -473,12 +473,20 @@ function App() {
   const [lastMetDate, setLastMetDate] = useState("");
   const [aiText, setAiText] = useState("");
   const [minuteTick, setMinuteTick] = useState(0);
+  const [unlockOn, setUnlockOn] = useState(() => {
+    try {
+      return !!(window.MM && window.MM.launchOnUnlock());
+    } catch (e) {
+      return false;
+    }
+  });
   const [aiEditId, setAiEditId] = useState(null);
   const [aiEditText, setAiEditText] = useState("");
   const [gap, setGap] = useState(null); // {start, cursor, entries:[{activity,from,to}]}
   const [gapAct, setGapAct] = useState(null);
   const [gapOther, setGapOther] = useState("");
   const hiddenAtRef = useRef(null);
+  const pendingDoRef = useRef(null);
   const [newItem, setNewItem] = useState("");
 
   // entry editing + history + backup
@@ -508,7 +516,20 @@ function App() {
   const wakeLockRef = useRef(null);
   const [wakeOk, setWakeOk] = useState(false);
 
-  const store = localStore;
+  const nativeStore = typeof window !== "undefined" && window.MM ? {
+    async get(k) {
+      const v = window.MM.load(k);
+      if (v === null || v === undefined || v === "") throw new Error("not found");
+      return { key: k, value: v };
+    },
+    async set(k, v) {
+      window.MM.save(k, v);
+      return { key: k, value: v };
+    },
+  } : null;
+  const store = nativeStore || localStore;
+  // the Android shell, when the book is bound inside one (see android/)
+  const MM = typeof window !== "undefined" && window.MM ? window.MM : null;
 
   const S = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   const NOPE_MS = (Number(S.nopeHours) || 5) * 3600e3;
@@ -582,7 +603,7 @@ function App() {
             setData(merged);
             try {
               const st = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
-              const hadQuery = /[?&](view|text|title|url)=/.test(window.location.search || "");
+              const hadQuery = /[?&](view|text|title|url|do)=/.test(window.location.search || "");
               if (st.autoOpen !== false && !hadQuery) {
                 const cs = (merged.checkins || [])
                   .filter((c) => STATES[c.state])
@@ -641,14 +662,29 @@ function App() {
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search);
+      // inside the Android shell, launch parameters arrive over the bridge instead
+      if (MM) {
+        try {
+          const raw = MM.consumeLaunch();
+          const lp = raw ? JSON.parse(raw) : {};
+          Object.keys(lp || {}).forEach((k) => lp[k] != null && q.set(k, String(lp[k])));
+        } catch (e0) {}
+      }
       const v = q.get("view");
       if (v === "tasks") setView({ name: "tasks" });
+      // home-screen shortcuts: ?do=nope | wuwei | fullmind checks in on arrival
+      const doState = q.get("do");
+      if (doState && STATES[doState]) pendingDoRef.current = doState;
       const shared = [q.get("title"), q.get("text"), q.get("url")]
         .filter(Boolean)
         .join(" ")
         .trim();
-      if (shared) setShareIn(shared);
-      if (v || shared) window.history.replaceState({}, "", window.location.pathname);
+      // a backup shared straight into a fresh copy restores instead of becoming a task
+      if (shared && shared.trim().charCodeAt(0) === 123 && /"checkins"/.test(shared)) {
+        setBackupText(shared);
+        setNeedImport(true);
+      } else if (shared) setShareIn(shared);
+      if (!MM && (v || shared || doState)) window.history.replaceState({}, "", window.location.pathname);
     } catch (e) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -723,7 +759,10 @@ function App() {
 
   const requestWake = async () => {
     try {
-      if (navigator.wakeLock && navigator.wakeLock.request) {
+      if (MM) {
+        MM.keepAwake(true);
+        setWakeOk(true);
+      } else if (navigator.wakeLock && navigator.wakeLock.request) {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
         setWakeOk(true);
         if (wakeLockRef.current.addEventListener) {
@@ -739,6 +778,7 @@ function App() {
 
   const releaseWake = () => {
     try {
+      if (MM) MM.keepAwake(false);
       if (wakeLockRef.current && wakeLockRef.current.release) wakeLockRef.current.release();
     } catch (e) {}
     wakeLockRef.current = null;
@@ -1445,6 +1485,82 @@ function App() {
     });
     ping(how === "done" ? "Done" : "Back in the pile — off the deck for a while");
   };
+
+  // ————— the Android widgets —————
+  // Widget taps are queued by the shell with their timestamps; the book applies
+  // them through its own rules whenever it is next open, so nothing is lost and
+  // every check-in keeps the moment it was actually made.
+  const applyWidgetActions = () => {
+    if (!MM || !loaded) return;
+    let acts = [];
+    try {
+      acts = JSON.parse(MM.drainActions() || "[]");
+    } catch (e) {
+      return;
+    }
+    if (!Array.isArray(acts) || !acts.length) return;
+    let d = data;
+    let lastCheckin = null;
+    acts.forEach((a) => {
+      const ts = Number(a.ts) || Date.now();
+      if (a.type === "checkin" && STATES[a.state]) {
+        const c = { id: uid(), state: a.state, ts, tried: [], via: "widget" };
+        if (lastCheckin && a.state !== "nope" && lastCheckin.state === "nope") c.exitFrom = "nope";
+        d = { ...d, checkins: [c, ...d.checkins].sort((x, y) => y.ts - x.ts) };
+        lastCheckin = c;
+      } else if ((a.type === "done" || a.type === "later") && a.key && a.id && d.tasks[a.key]) {
+        const list = d.tasks[a.key];
+        const t = list.find((x) => x.id === a.id && x.state === "open");
+        if (!t) return;
+        let next = list.map((x) =>
+          x.id === a.id ? { ...x, state: a.type === "done" ? "done" : "reentered", resolved: ts } : x
+        );
+        if (a.type === "later")
+          next = [
+            ...next,
+            { ...t, id: uid(), state: "open", resolved: undefined, created: ts, benchUntil: ts + LATER_BENCH_MS },
+          ];
+        const heldKey = { ...((d.held && d.held[a.key]) || {}) };
+        delete heldKey[a.id];
+        d = {
+          ...d,
+          tasks: { ...d.tasks, [a.key]: next },
+          taskLog: [
+            { id: uid(), text: t.text, how: a.type === "done" ? "done" : "reenter", list: a.key, ts, via: "widget" },
+            ...(d.taskLog || []),
+          ],
+          top3: { ...d.top3, [a.key]: ((d.top3 && d.top3[a.key]) || []).filter((x) => x !== a.id) },
+          held: { ...(d.held || {}), [a.key]: heldKey },
+          front: { ...d.front, [a.key]: (d.front && d.front[a.key]) === a.id ? null : (d.front || {})[a.key] },
+        };
+      }
+    });
+    if (d !== data) commit(d);
+    if (lastCheckin) {
+      setActiveCheckin(lastCheckin.id);
+      setStackView(null);
+      setView({ name: "state", state: lastCheckin.state });
+    }
+    if (acts.length) ping(acts.length === 1 ? "Noted from the widget" : acts.length + " widget entries folded in");
+  };
+  // the shell calls these when the book comes back to the foreground
+  useEffect(() => {
+    if (!MM) return;
+    window.__mmResume = () => {
+      applyWidgetActions();
+      try {
+        const raw = MM.consumeLaunch();
+        const lp = raw ? JSON.parse(raw) : null;
+        if (lp && lp.view === "tasks") setView({ name: "tasks" });
+        if (lp && lp.text) setShareIn(String(lp.text));
+      } catch (e) {}
+    };
+  });
+  useEffect(() => {
+    if (loaded) applyWidgetActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
   const deleteTask = (key, id) => setTasks(key, (data.tasks[key] || []).filter((t) => t.id !== id));
   const demoteTask = (key, id) =>
     setTasks(key, (data.tasks[key] || []).map((t) => (t.id === id ? { ...t, imp: "normal" } : t)));
@@ -1956,6 +2072,58 @@ function App() {
       {label}
     </button>
   );
+
+  // a home-screen shortcut asked for a check-in: do it once the record is open
+  useEffect(() => {
+    if (!loaded || !pendingDoRef.current) return;
+    const st = pendingDoRef.current;
+    pendingDoRef.current = null;
+    checkIn(st);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
+  // hand the Android widgets a small picture of the book after every change
+  useEffect(() => {
+    if (!MM || !loaded) return;
+    try {
+      const key = deckKey;
+      const deck = deckFor(key, mindNow)
+        .slice(0, 3)
+        .map((t) => ({ id: t.id, text: t.text, imp: effImp(t), virtual: t.virtual || null }));
+      const sum = (from, to) => {
+        const tot = { wuwei: 0, fullmind: 0, nope: 0 };
+        stateIntervals.forEach((v) => {
+          const s = Math.max(v.start, from);
+          const e = Math.min(v.end, to);
+          if (e > s) tot[v.state] += e - s;
+        });
+        return tot;
+      };
+      const d0 = new Date();
+      d0.setHours(0, 0, 0, 0);
+      const lastC = [...data.checkins].filter((c) => STATES[c.state]).sort((a, b) => b.ts - a.ts)[0];
+      const snap = {
+        v: 1,
+        at: now,
+        state: mindNow,
+        since: currentState ? currentState.since : null,
+        lastCheckinTs: lastC ? lastC.ts : null,
+        lastCheckinState: lastC ? lastC.state : null,
+        nopeHours: Number(S.nopeHours) || 5,
+        deckKey: key,
+        deck,
+        today: sum(d0.getTime(), now),
+        week: sum(now - 7 * 864e5, now),
+        weekOtf,
+        otfCap,
+        otfGoal,
+        last14: Math.round(last14 * 10) / 10,
+        mileTarget: Math.round(mileTarget * 10) / 10,
+      };
+      MM.snapshot(JSON.stringify(snap));
+    } catch (e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, minuteTick, loaded, taskView]);
 
   if (!loaded) {
     return (
@@ -4288,6 +4456,26 @@ function App() {
               {S.autoOpen === false ? "OFF" : "ON"}
             </span>
           </button>
+          {MM && (
+            <button
+              onClick={() => {
+                const next = !unlockOn;
+                try {
+                  MM.setLaunchOnUnlock(next);
+                } catch (e) {}
+                setUnlockOn(next);
+                if (next && !MM.canLaunchOnUnlock())
+                  ping("Allow “display over other apps”, then come back");
+              }}
+              className="flex items-center justify-between px-4 py-3 w-full"
+              style={card}
+            >
+              <span style={{ ...mono(10) }}>OPEN WHEN PHONE UNLOCKS</span>
+              <span style={{ ...mono(10, unlockOn ? T.ww : T.sub) }}>
+                {unlockOn ? (MM.canLaunchOnUnlock() ? "ON" : "NEEDS PERMISSION") : "OFF"}
+              </span>
+            </button>
+          )}
         </div>
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
           These feed the clock rules, the deck, and the training nudges throughout the book. Work
