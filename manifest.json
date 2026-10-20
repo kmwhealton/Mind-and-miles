@@ -1,4 +1,10 @@
 {
+   "shortcuts": [
+    { "name": "Nope", "short_name": "Nope", "url": "./?do=nope", "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Full Mind", "short_name": "Full Mind", "url": "./?do=fullmind", "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Wu Wei", "short_name": "Wu Wei", "url": "./?do=wuwei", "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Tasks", "short_name": "Tasks", "url": "./?view=tasks", "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ],
   "name": "Mind & Miles \u2014 A Wanderer's Book of Hours",
   "short_name": "Mind & Miles",
   "start_url": "./",
