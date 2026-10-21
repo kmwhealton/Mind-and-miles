@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261020-152537 -->
+<!-- build 20261021-073911 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -143,6 +143,7 @@ const DEFAULT_SETTINGS = {
   impCap: 30,
   mileFloor: 20,
   reviewAt: "08:00",
+  aiEvery: 3, // days between appearances of "Improve AI productivity" on the deck
   autoOpen: true,
 };
 const DAILY_REVIEW_TEXT = "Review notes for actions";
@@ -1194,7 +1195,12 @@ function App() {
         imp: "important",
         mind: "wuwei",
       });
-    if (key === "work" && mind !== "wuwei" && !(data.aiSnooze && data.aiSnooze > now)) {
+    // "Improve AI productivity" comes round now and then, not every day:
+    // only when gaps are open, and not until aiEvery days after it was last opened
+    const aiEveryMs = (Number(S.aiEvery) || 3) * 86400e3;
+    const aiDue = !data.aiLastVisit || now - data.aiLastVisit >= aiEveryMs;
+    const aiOpenGaps = (data.aiGaps || []).filter((g) => !g.solved).length;
+    if (key === "work" && mind !== "wuwei" && aiDue && aiOpenGaps > 0 && !(data.aiSnooze && data.aiSnooze > now)) {
       const openGaps = (data.aiGaps || []).filter((g) => !g.solved).length;
       virtuals.push({
         id: "aigaps",
@@ -1272,7 +1278,10 @@ function App() {
     setView({ name: "tasks" });
     if (v.virtual === "cull") setCullOpen(true);
     else if (v.virtual === "meet") setMeetView(true);
-    else if (v.virtual === "aigaps") setView({ name: "aigaps" });
+    else if (v.virtual === "aigaps") {
+      commit({ ...data, aiLastVisit: Date.now() });
+      setView({ name: "aigaps" });
+    }
     else if (v.virtual === "sort") {
       setQaImp("important");
       setQaMind("small");
@@ -1350,8 +1359,8 @@ function App() {
     ping("Front of the work deck");
   };
   const snoozeAiGaps = () => {
-    commit({ ...data, aiSnooze: startOfDay(now) + 86400e3 });
-    ping("Not today — back tomorrow");
+    commit({ ...data, aiLastVisit: Date.now() });
+    ping("Off the deck — back in " + (Number(S.aiEvery) || 3) + " days");
   };
   const pinToggle = (key, id) => {
     const cur = (data.top3 && data.top3[key]) || [];
@@ -4476,6 +4485,7 @@ function App() {
           {row("IMPORTANT CAP", "impCap")}
           {row("MILES FLOOR / 14 DAYS", "mileFloor")}
           {row("DAILY REVIEW AT", "reviewAt", "time")}
+          {row("AI LIST EVERY (DAYS)", "aiEvery")}
           <button
             onClick={() => setSetting("autoOpen", S.autoOpen === false ? true : false)}
             className="flex items-center justify-between px-4 py-3 w-full"
