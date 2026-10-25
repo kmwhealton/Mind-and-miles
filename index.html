@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261021-073911 -->
+<!-- build 20261023-004906 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -494,6 +494,9 @@ function App() {
   const [aiEditId, setAiEditId] = useState(null);
   const [aiEditText, setAiEditText] = useState("");
   const [gap, setGap] = useState(null); // {start, cursor, entries:[{activity,from,to}]}
+  // an unaccounted stretch waits quietly under ⋯ instead of interrupting the start screen
+  const [pendingGap, setPendingGap] = useState(null); // start timestamp
+  const noteGap = (t) => setPendingGap((cur) => (cur ? Math.min(cur, t) : t));
   const [gapAct, setGapAct] = useState(null);
   const [gapOther, setGapOther] = useState("");
   const hiddenAtRef = useRef(null);
@@ -645,7 +648,7 @@ function App() {
         if (store) {
           const seen = await store.get(KEY + "_seen").catch(() => null);
           const t = seen && seen.value ? Number(seen.value) : 0;
-          if (t && Date.now() - t > GAP_MIN_MS) setGap({ start: t, cursor: t, entries: [] });
+          if (t && Date.now() - t > GAP_MIN_MS) noteGap(t);
         }
       } catch (e3) {}
     })();
@@ -663,7 +666,7 @@ function App() {
       if (document.visibilityState === "hidden") markSeen();
       else if (document.visibilityState === "visible") {
         const t = hiddenAtRef.current;
-        if (t && Date.now() - t > GAP_MIN_MS) setGap({ start: t, cursor: t, entries: [] });
+        if (t && Date.now() - t > GAP_MIN_MS) noteGap(t);
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -904,6 +907,7 @@ function App() {
       ping(rows.length + " logged");
     }
     setGap(null);
+    setPendingGap(null);
     setGapAct(null);
     setGapOther("");
   };
@@ -4435,8 +4439,25 @@ function App() {
     );
   };
 
+  const openGap = () => {
+    if (gap) return;
+    const start = pendingGap || Date.now() - GAP_MIN_MS;
+    setGap({ start, cursor: start, entries: [] });
+  };
   const MoreView = () => (
     <div className="flex flex-col gap-2">
+      <button
+        onClick={openGap}
+        className="w-full text-left px-5 py-4 transition active:translate-y-px"
+        style={{ ...card, borderLeft: pendingGap ? `4px solid ${T.rubric}` : card.borderLeft }}
+      >
+        <span style={{ fontFamily: FONT.disp, fontSize: 26, color: T.ink }}>The Gap</span>
+        <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: pendingGap ? T.rubric : T.sub, marginTop: 2 }}>
+          {pendingGap
+            ? fmtDur(Date.now() - pendingGap) + " unaccounted since " + fmtTime(pendingGap) + " — fill it in"
+            : "Account for time the book was closed"}
+        </p>
+      </button>
       {[
         { label: "AI Gaps", to: "aigaps", desc: "What AI cannot do for me yet" },
         { label: "Training", to: "train", desc: "The quest, sessions, miles" },
