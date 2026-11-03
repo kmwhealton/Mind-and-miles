@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261023-004906 -->
+<!-- build 20261102-154042 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -484,6 +484,9 @@ function App() {
   const [lastMetDate, setLastMetDate] = useState("");
   const [aiText, setAiText] = useState("");
   const [minuteTick, setMinuteTick] = useState(0);
+  const [scan, setScan] = useState(null); // FVP scan: {key, which, ids, i, chain}
+  const scanSkipRef = useRef({});
+  const [showAll, setShowAll] = useState(false); // the full task list, hidden by default
   const [unlockOn, setUnlockOn] = useState(() => {
     try {
       return !!(window.MM && window.MM.launchOnUnlock());
@@ -1178,98 +1181,83 @@ function App() {
       : "normal";
   const importantCount = (key) => taskOpen(key).filter((t) => effImp(t) === "important").length;
   const unsortedCount = (key) => taskOpen(key).filter((t) => t.unsorted).length;
+  // ——— the deck, by state ———
+  //   Nope      · every urgent (the Nope stack sits below)
+  //   Full Mind · urgents, then the FVP chain of important small tasks worked from the
+  //               bottom up, to 3 slots — plus one meeting to set up and one normal "rando"
+  //   Wu Wei    · urgents, then Big tasks, to 2 slots (FVP chain once >3 Big tasks matter)
+  const freeOf = (key) => taskOpen(key).filter((t) => !(t.benchUntil && t.benchUntil > now));
+  const poolFor = (key, which) =>
+    freeOf(key).filter((t) => sizeOf(t) === which && effImp(t) === "important");
+  const chainFor = (key, which) =>
+    poolFor(key, which)
+      .filter((t) => t.dot)
+      .sort((a, b) => a.dot - b.dot);
+  const bigScanNeeded = (key) =>
+    freeOf(key).filter((t) => sizeOf(t) === "big" && effImp(t) !== "normal").length > 3;
+  const scanWhich = (key, mind) =>
+    mind === "fullmind" ? "small" : mind === "wuwei" && bigScanNeeded(key) ? "big" : null;
+  const fromChain = (key, which) => {
+    const ch = chainFor(key, which);
+    return ch.length ? [...ch].reverse() : poolFor(key, which);
+  };
+  const meetingVirtual = (key) => {
+    if (key !== "work") return null;
+    const m = meetingsDue()[0];
+    if (!m) return null;
+    const n = (m.agenda || []).length;
+    return {
+      id: "meet:" + m.id,
+      virtual: "meet",
+      text: "Set up meeting w/ " + m.name + (n ? " · " + n + " agenda item" + (n === 1 ? "" : "s") : ""),
+      imp: "urgent",
+    };
+  };
+  const randoFor = (key) => {
+    const r = data.rando && data.rando[key];
+    if (!r || r.day !== new Date().toDateString()) return null;
+    const t = freeOf(key).find((x) => x.id === r.id);
+    return t && sizeOf(t) === "small" && effImp(t) === "normal" ? t : null;
+  };
   const deckFor = (key, mind) => {
-    const open = taskOpen(key);
-    const pinnedIds = (data.top3 && data.top3[key]) || [];
-    const pinned = pinnedIds.map((id) => open.find((t) => t.id === id)).filter(Boolean);
-    const virtuals = [];
-    if (importantCount(key) > (Number(S.impCap) || 30))
-      virtuals.push({
-        id: "cull:" + key,
-        virtual: "cull",
-        text: "Cull the herd — " + importantCount(key) + " important tasks, cap is " + S.impCap,
-        imp: "important",
-        mind: "fullmind",
-      });
-    if (unsortedCount(key) >= 5)
-      virtuals.push({
-        id: "sort:" + key,
-        virtual: "sort",
-        text: "Sort the tasks — " + unsortedCount(key) + " unsorted",
-        imp: "important",
-        mind: "wuwei",
-      });
-    // "Improve AI productivity" comes round now and then, not every day:
-    // only when gaps are open, and not until aiEvery days after it was last opened
-    const aiEveryMs = (Number(S.aiEvery) || 3) * 86400e3;
-    const aiDue = !data.aiLastVisit || now - data.aiLastVisit >= aiEveryMs;
-    const aiOpenGaps = (data.aiGaps || []).filter((g) => !g.solved).length;
-    if (key === "work" && mind !== "wuwei" && aiDue && aiOpenGaps > 0 && !(data.aiSnooze && data.aiSnooze > now)) {
-      const openGaps = (data.aiGaps || []).filter((g) => !g.solved).length;
-      virtuals.push({
-        id: "aigaps",
-        virtual: "aigaps",
-        text:
-          "Improve AI productivity" +
-          (openGaps ? " · " + openGaps + " gap" + (openGaps === 1 ? "" : "s") + " on the list" : ""),
-        imp: "important",
-        mind: mind,
-      });
+    const free = freeOf(key);
+    const urg = free.filter((t) => effImp(t) === "urgent");
+    const fill = (deck, cands, slots) => {
+      for (const c of cands) {
+        if (deck.length >= slots) break;
+        if (!deck.some((d) => d.id === c.id)) deck.push(c);
+      }
+      return deck;
+    };
+    let deck;
+    if (mind === "nope") {
+      deck = [...urg];
+    } else if (mind === "wuwei") {
+      const slots = Math.max(2, urg.length);
+      const anyBig = free.some((t) => sizeOf(t) === "big");
+      const bigs = !anyBig
+        ? fromChain(key, "small")
+        : bigScanNeeded(key)
+        ? fromChain(key, "big")
+        : [
+            ...free.filter((t) => sizeOf(t) === "big" && effImp(t) === "important"),
+            ...free.filter((t) => sizeOf(t) === "big" && effImp(t) === "normal"),
+          ];
+      deck = fill([...urg], bigs, slots);
+    } else {
+      const slots = Math.max(3, urg.length);
+      deck = fill([...urg], fromChain(key, "small"), slots);
+      const mv = meetingVirtual(key);
+      if (mv) deck.push({ ...mv, slot: "meeting" });
+      const r = randoFor(key);
+      if (r && !deck.some((d) => d.id === r.id)) deck.push({ ...r, slot: "rando" });
     }
-    const meetVirtuals = [];
-    if (key === "work")
-      meetingsDue()
-        .slice(0, 3)
-        .forEach((m) => {
-          const n = (m.agenda || []).length;
-          meetVirtuals.push({
-            id: "meet:" + m.id,
-            virtual: "meet",
-            text:
-              "Set up meeting w/ " +
-              m.name +
-              (n ? " · " + n + " agenda item" + (n === 1 ? "" : "s") : ""),
-            imp: "urgent",
-            mind: "fullmind",
-          });
-        });
-    // tasks sent back with Later sit out of the auto-deal for a while
-    const free = open.filter((t) => !(t.benchUntil && t.benchUntil > now));
-    const realUrgent = free.filter((t) => effImp(t) === "urgent");
-    // the front two slots: your urgent tasks and the meetings, one of each first,
-    // so a pile of urgent tasks can never hide the meetings that need setting up
-    const front2 = [];
-    if (realUrgent[0]) front2.push(realUrgent[0]);
-    if (meetVirtuals[0]) front2.push(meetVirtuals[0]);
-    for (const c of [...realUrgent.slice(1), ...meetVirtuals.slice(1)]) {
-      if (front2.length >= 2) break;
-      if (!front2.some((x) => x.id === c.id)) front2.push(c);
-    }
-    const urgents = [...realUrgent, ...meetVirtuals];
-    const metaTasks = virtuals.filter((v) => v.mind === mind);
-    // big tasks belong to Wu Wei; small ones to Full Mind and Nope.
-    // Wu Wei falls back to small tasks only when no big task is left.
-    const ofSize = (sz, imp) => free.filter((t) => sizeOf(t) === sz && effImp(t) === imp);
-    const bigs = [...ofSize("big", "important"), ...ofSize("big", "normal")];
-    const smalls = [...ofSize("small", "important"), ...ofSize("small", "normal")];
-    const candidates = mind === "wuwei" ? (bigs.length ? bigs : smalls) : smalls;
-    // urgents take the front, then the book's own meta-tasks, then your pins
-    const deck = [...front2, ...metaTasks.slice(0, 1)];
-    for (const p of pinned) {
-      if (deck.length >= 3) break;
-      if (!deck.some((d) => d.id === p.id)) deck.push(p);
-    }
-    for (const c of [...urgents, ...metaTasks.slice(1), ...candidates]) {
-      if (deck.length >= 3) break;
-      if (!deck.some((d) => d.id === c.id)) deck.push(c);
-    }
-    // anything you set down with "keep on deck" sinks to the bottom
+    // "keep on deck" sinks a task to the back; "work this" brings one to the front
     const heldMap = (data.held && data.held[key]) || {};
     const ordered = deck
       .map((t, i) => ({ t, i, h: heldMap[t.id] || 0 }))
       .sort((a, b) => (a.h ? 1 : 0) - (b.h ? 1 : 0) || a.h - b.h || a.i - b.i)
       .map((x) => x.t);
-    // a task you chose to work leads, whatever its tier
     const fid = data.front && data.front[key];
     const chosen = fid ? ordered.find((t) => t.id === fid) : null;
     return chosen ? [chosen, ...ordered.filter((t) => t.id !== fid)] : ordered;
@@ -1299,6 +1287,80 @@ function App() {
       setView({ name: "tasks" });
     }
   };
+  // ————— FVP: the dotted chain —————
+  const dotTasks = (key, ids) => {
+    const base = Date.now();
+    const order = {};
+    ids.forEach((id, i) => (order[id] = base + i));
+    commit({
+      ...data,
+      tasks: {
+        ...data.tasks,
+        [key]: (data.tasks[key] || []).map((t) => (order[t.id] ? { ...t, dot: order[t.id] } : t)),
+      },
+    });
+  };
+  const dotToggle = (key, id) => {
+    const t = (data.tasks[key] || []).find((x) => x.id === id);
+    if (!t) return;
+    commit({
+      ...data,
+      tasks: {
+        ...data.tasks,
+        [key]: (data.tasks[key] || []).map((x) =>
+          x.id === id ? { ...x, dot: x.dot ? null : Date.now(), benchUntil: null } : x
+        ),
+      },
+    });
+    ping(t.dot ? "Dot removed" : "Dotted — now the front of the chain");
+  };
+  const startScan = (key, which) => {
+    const ids = poolFor(key, which).map((t) => t.id);
+    if (!ids.length) return;
+    if (ids.length === 1) return dotTasks(key, ids);
+    setScan({ key, which, ids, i: 1, chain: [ids[0]] });
+  };
+  const scanAnswer = (yes) => {
+    if (!scan) return;
+    const chain = yes ? [...scan.chain, scan.ids[scan.i]] : scan.chain;
+    const i = scan.i + 1;
+    if (i >= scan.ids.length) {
+      dotTasks(scan.key, chain);
+      setScan(null);
+      ping(chain.length + " dotted");
+    } else setScan({ ...scan, i, chain });
+  };
+  const scanStop = () => {
+    if (!scan) return;
+    dotTasks(scan.key, scan.chain);
+    setScan(null);
+    ping(scan.chain.length + " dotted");
+  };
+  const scanNotNow = () => {
+    if (!scan) return;
+    scanSkipRef.current[scan.key + ":" + scan.which] = true;
+    setScan(null);
+  };
+  // one random normal task a day rides along on the Full Mind deck
+  useEffect(() => {
+    if (!loaded) return;
+    const day = new Date().toDateString();
+    let changed = false;
+    const next = { ...(data.rando || {}) };
+    ["work", "home"].forEach((key) => {
+      if (randoFor(key)) return;
+      const cur = next[key];
+      if (cur && cur.day === day && cur.id === null) return; // nothing to pick today
+      const pool = freeOf(key).filter((t) => sizeOf(t) === "small" && effImp(t) === "normal");
+      const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)].id : null;
+      if (cur && cur.day === day && cur.id === pick) return;
+      next[key] = { day, id: pick };
+      changed = true;
+    });
+    if (changed) commit({ ...data, rando: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, data, minuteTick]);
+
   // ————— the daily review —————
   // at the appointed hour each day, an urgent task appears on the work deck
   useEffect(() => {
@@ -1500,6 +1562,7 @@ function App() {
           resolved: undefined,
           created: Date.now(),
           benchUntil: Date.now() + LATER_BENCH_MS,
+          dot: null,
         },
       ];
     const entry = {
@@ -1552,7 +1615,7 @@ function App() {
         if (a.type === "later")
           next = [
             ...next,
-            { ...t, id: uid(), state: "open", resolved: undefined, created: ts, benchUntil: ts + LATER_BENCH_MS },
+            { ...t, id: uid(), state: "open", resolved: undefined, created: ts, benchUntil: ts + LATER_BENCH_MS, dot: null },
           ];
         const heldKey = { ...((d.held && d.held[a.key]) || {}) };
         delete heldKey[a.id];
@@ -2106,6 +2169,18 @@ function App() {
     </button>
   );
 
+  // when the chain runs dry, the scan opens by itself
+  useEffect(() => {
+    if (!loaded || scan || qaOpen || medOpen) return;
+    if (!(view.name === "state" || view.name === "tasks")) return;
+    const key = deckKey;
+    const which = scanWhich(key, mindNow);
+    if (!which || scanSkipRef.current[key + ":" + which]) return;
+    if (chainFor(key, which).length) return;
+    if (poolFor(key, which).length) startScan(key, which);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, view.name, mindNow, data, deckKey, scan, qaOpen, medOpen]);
+
   // a home-screen shortcut asked for a check-in: do it once the record is open
   useEffect(() => {
     if (!loaded || !pendingDoRef.current) return;
@@ -2203,6 +2278,170 @@ function App() {
         >
           TO TRAINING →
         </button>
+      </div>
+    );
+  };
+
+  const startTaskEdit = (t) => {
+    setEditTaskId(t.id);
+    setEditTaskText(t.text);
+    setEditTaskImp(t.imp || "normal");
+    setEditTaskMind(sizeOf(t));
+    setEditTaskDate(t.urgentAt ? toLocalInput(t.urgentAt).slice(0, 10) : "");
+    setEditFrom("deck");
+  };
+  const TaskEditorFor = (activeKey) => (
+    <div className="mt-2 flex flex-col gap-2">
+      <input
+        value={editTaskText}
+        onChange={(e) => setEditTaskText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") saveTaskEdit(activeKey);
+        }}
+        autoFocus
+        className="w-full px-2 py-1"
+        style={{ ...inputS13, fontSize: 13.5 }}
+      />
+      <div className="flex gap-2">
+        {["urgent", "important", "normal"].map((v) => (
+          <button
+            key={v}
+            onClick={() => setEditTaskImp(v)}
+            className="px-2 py-1"
+            style={chip(editTaskImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}
+          >
+            {v.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {Object.values(SIZES).map((st) => (
+          <button
+            key={st.key}
+            onClick={() => setEditTaskMind(st.key)}
+            className="px-2 py-1"
+            style={chip(editTaskMind === st.key, st.color)}
+          >
+            {st.name.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {editTaskImp === "important" && (
+        <div className="flex items-center gap-2">
+          <label style={{ ...mono(9) }}>URGENT ON</label>
+          <input
+            type="date"
+            value={editTaskDate}
+            onChange={(e) => setEditTaskDate(e.target.value)}
+            className="flex-1 px-2 py-1"
+            style={inputS13}
+          />
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button onClick={() => saveTaskEdit(activeKey)} className="flex-1 py-2" style={btnInk}>
+          SAVE
+        </button>
+        <button onClick={() => setEditTaskId(null)} className="flex-1 py-2" style={btnGhost}>
+          CANCEL
+        </button>
+      </div>
+    </div>
+  );
+
+  // ————— the deck, drawn the same way on every screen —————
+  const DeckPanel = (activeKey, mind) => {
+    const deck = deckFor(activeKey, mind);
+    const front = deck[0] || null;
+    const which = scanWhich(activeKey, mind);
+    const chainN = which ? chainFor(activeKey, which).length : 0;
+    const color = STATES[mind] ? STATES[mind].color : T.ww;
+    const slotTag = (t) =>
+      t.slot === "meeting" ? "meeting" : t.slot === "rando" ? "rando" : effImp(t) === "urgent" ? "" : t.dot ? "●" : "";
+    return (
+      <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${color}` }}>
+        <div className="flex items-center justify-between">
+          <p style={{ ...mono(10, color) }}>ON DECK · {activeKey === "work" ? "WORK" : "HOME"}</p>
+          {which && (
+            <button onClick={() => startScan(activeKey, which)} style={{ ...mono(9, T.sub), background: "transparent" }}>
+              ● {chainN} DOTTED{which === "big" ? " · BIG" : ""} · SCAN ▸
+            </button>
+          )}
+        </div>
+        {!front ? (
+          <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
+            {mind === "nope" ? "No urgent tasks. Work the stack." : "Nothing on deck — add a task with the + button."}
+          </p>
+        ) : (
+          <>
+            <div className="flex items-start gap-2 mt-2">
+              <span className="shrink-0 mt-1">{tierGlyph(front)}</span>
+              <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+                {front.text}
+                {slotTag(front) && <span style={{ color: T.sub, fontSize: 10.5, fontWeight: 400 }}> · {slotTag(front)}</span>}
+              </p>
+              {!front.virtual && (
+                <button onClick={() => startTaskEdit(front)} className="shrink-0" style={{ ...mono(11, T.rubric), background: "transparent" }}>
+                  ✎
+                </button>
+              )}
+            </div>
+            {front.virtual ? (
+              <div>
+                <button onClick={() => openVirtual(front)} className="w-full py-2 mt-3" style={btnInk}>
+                  OPEN THE ROSTER
+                </button>
+                <button onClick={() => snoozeMeeting(front.id.slice(5))} className="w-full py-2 mt-2" style={btnFmOutline}>
+                  ↻ IN PROGRESS — BACK TOMORROW
+                </button>
+              </div>
+            ) : editTaskId === front.id && editFrom === "deck" ? (
+              TaskEditorFor(activeKey)
+            ) : (
+              <div className="flex gap-2 mt-3 items-center">
+                <button onClick={() => resolveTask(activeKey, front.id, "later")} className="flex-1 py-2" style={btnFmOutline}>
+                  ↻ LATER
+                </button>
+                <button onClick={() => keepOnDeck(activeKey, front.id, mind)} className="flex-1 py-2" style={btnWwOutline}>
+                  KEEP ON DECK
+                </button>
+                <button onClick={() => resolveTask(activeKey, front.id, "done")} className="px-3 py-2 shrink-0" style={btnWw}>
+                  DONE ✓
+                </button>
+              </div>
+            )}
+            {deck.slice(1).map((t) => (
+              <div key={t.id} className="mt-2" style={{ opacity: 0.85 }}>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0">{tierGlyph(t)}</span>
+                  <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
+                    {t.text}
+                    {slotTag(t) && <span style={{ color: T.sub, fontSize: 10 }}> · {slotTag(t)}</span>}
+                  </span>
+                  {t.virtual ? (
+                    <button onClick={() => openVirtual(t)} className="shrink-0" style={{ ...mono(9, T.np), background: "transparent" }}>
+                      OPEN ▸
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => frontTask(activeKey, t.id, mind)}
+                        className="shrink-0 px-2 py-1"
+                        style={{ ...mono(9, T.panel), background: color, border: `1px solid ${T.ink}`, borderRadius: 2 }}
+                      >
+                        WORK THIS ↑
+                      </button>
+                      <button onClick={() => startTaskEdit(t)} className="shrink-0" style={{ ...mono(10, T.rubric), background: "transparent" }}>
+                        ✎
+                      </button>
+                    </>
+                  )}
+                </div>
+                {editTaskId === t.id && editFrom === "deck" && TaskEditorFor(activeKey)}
+              </div>
+            ))}
+          </>
+        )}
       </div>
     );
   };
@@ -2421,173 +2660,18 @@ function App() {
   const FullMindView = () => (
     <div>
       <BackLink />
-      <StateHeader
-        s={STATES.fullmind}
-        line="Logged. Don't force the work — set things down first, then flow."
-      />
-      {SignalCard()}
-      {MoveFirst()}
-      {(() => {
-        const ft = workTask(deckKey, "fullmind");
-        return ft ? (
-          <div
-            onClick={() => openTaskCard(ft)}
-            className="px-4 py-3 mb-4"
-            style={{ ...card, borderLeft: `4px solid ${T.fm}`, cursor: "pointer" }}
-          >
-            <p style={{ ...mono(10, T.fm) }}>
-              THE TASK · {deckKey === "work" ? "AT WORK" : "AT HOME"}
-            </p>
-            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 15.5, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
-              {ft.text}
-            </p>
-            <button onClick={() => openTaskCard(ft)} className="mt-1" style={{ ...mono(10, T.sub), background: "transparent" }}>
-              {ft.virtual ? "OPEN IT →" : "OPEN THE TASKS →"}
-            </button>
-          </div>
-        ) : null;
-      })()}
-      <div className="px-4 py-4 mb-4" style={card}>
-        <Rubric className="mb-2">SET IT DOWN</Rubric>
-        <textarea
-          value={dumpText}
-          onChange={(e) => setDumpText(e.target.value)}
-          rows={3}
-          placeholder="What's taking up space in your head or heart?"
-          className="w-full p-3"
-          style={{
-            background: T.paper,
-            border: `1px solid ${T.line}`,
-            borderRadius: 2,
-            color: T.ink,
-            fontFamily: FONT.body,
-            fontSize: 14.5,
-            outline: "none",
-            resize: "vertical",
-          }}
-        />
-        <button
-          onClick={releaseDump}
-          className="mt-2 px-4 py-2 transition active:translate-y-px"
-          style={{
-            background: T.panel,
-            border: `1px solid ${T.fm}`,
-            borderRadius: 2,
-            color: T.fm,
-            fontFamily: FONT.body,
-            fontSize: 11,
-            letterSpacing: "0.12em",
-            fontWeight: 700,
-          }}
-        >
-          SET DOWN →
-        </button>
-      </div>
-      <Rubric className="mb-2">THEN ONE OF THESE</Rubric>
-      <MoveList items={FM_MOVES} color={T.fm} />
-      <TransitionBtn label="MIND CLEARED → ENTER WU WEI" to="wuwei" />
+      <StateHeader s={STATES.fullmind} line="Just the tasks. Work the front." />
+      {DeckPanel(deckKey, "fullmind")}
     </div>
   );
 
-  const WuWeiView = () => {
-    const cur = workTask(deckKey, "wuwei");
-    return (
-      <div>
-        <BackLink />
-        <StateHeader s={STATES.wuwei} line="You're in it. Don't spend it deciding — spend it moving." />
-        {SignalCard()}
-        {cur ? (
-          <div>
-            <div
-              onClick={() => openTaskCard(cur)}
-              className="px-4 py-4 mb-3"
-              style={{ ...card, borderLeft: `4px solid ${T.ww}`, cursor: "pointer" }}
-            >
-              <p style={{ ...mono(10, T.ww) }}>
-                THE TASK · {deckKey === "work" ? "AT WORK" : "AT HOME"}
-              </p>
-              <p
-                className="mt-1"
-                style={{ fontFamily: FONT.body, fontSize: 17, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}
-              >
-                {cur.text}
-              </p>
-              <button
-                onClick={() => openTaskCard(cur)}
-                className="mt-2"
-                style={{ ...mono(10, T.sub), background: "transparent" }}
-              >
-                {cur.virtual ? "OPEN IT →" : "OPEN THE LIST →"}
-              </button>
-            </div>
-            <div className="flex justify-center">
-              <button
-                onClick={() => setView({ name: "train" })}
-                className="px-5 py-2 mt-2"
-                style={{
-                  background: "transparent",
-                  border: `1px solid ${T.ww}`,
-                  borderRadius: 2,
-                  color: T.ww,
-                  fontFamily: FONT.body,
-                  fontSize: 11,
-                  letterSpacing: "0.12em",
-                  fontWeight: 700,
-                }}
-              >
-                WORKOUT?
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
-              <p style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>
-                Nothing on deck for Wu Wei on the {deckKey === "work" ? "work" : "home"} list.
-              </p>
-              <button
-                onClick={() => setView({ name: "tasks" })}
-                className="mt-1"
-                style={{ ...mono(10, T.ww), background: "transparent" }}
-              >
-                OPEN THE TASKS →
-              </button>
-            </div>
-            <div className="mb-4 px-4 pt-4 pb-3" style={card}>
-              <Pilgrim ink={T.ink} />
-              <p
-                className="mt-2 text-center"
-                style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 14, color: T.ink, opacity: 0.9 }}
-              >
-                Effortless action isn't no action — it's unblocked action.
-              </p>
-            </div>
-            <MoveList items={WW_MOVES} color={T.ww} />
-            {todayWorkouts.length === 0 && (
-              <button
-                onClick={() => setView({ name: "train" })}
-                className="w-full py-3 mt-3 transition active:translate-y-px"
-                style={{
-                  background: "transparent",
-                  border: `1px solid ${T.ww}`,
-                  borderRadius: 2,
-                  color: T.ww,
-                  fontFamily: FONT.body,
-                  fontSize: 12,
-                  letterSpacing: "0.12em",
-                  fontWeight: 700,
-                }}
-              >
-                {daysSinceOtf !== null && daysSinceOtf >= 4
-                  ? `${daysSinceOtf} DAYS SINCE OTF — TO TRAINING →`
-                  : "NOTHING LOGGED TODAY — TO TRAINING →"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const WuWeiView = () => (
+    <div>
+      <BackLink />
+      <StateHeader s={STATES.wuwei} line="You're in it. Big work only." />
+      {DeckPanel(deckKey, "wuwei")}
+    </div>
+  );
 
   const NopeView = () => {
     const current = data.checkins.find((c) => c.id === activeCheckin);
@@ -2602,27 +2686,7 @@ function App() {
           s={STATES.nope}
           line="Noted, no judgment. Work the stack from the top. Stop the moment something shifts."
         />
-        {SignalCard()}
-        {DoorCard()}
-        {MoveFirst()}
-        {(() => {
-          const u =
-            taskOpen(taskKeyNow).filter((t) => effImp(t) === "urgent")[0] ||
-            (taskKeyNow === "work" && meetingsDue().length
-              ? { text: "Set up meeting w/ " + meetingsDue()[0].name }
-              : null);
-          return u ? (
-            <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
-              <p style={{ ...mono(10, T.np) }}>⚑ URGENT — EVEN IN NOPE</p>
-              <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: 600, color: T.ink }}>
-                {u.text}
-              </p>
-              <button onClick={() => setView({ name: "tasks" })} className="mt-1" style={{ ...mono(10, T.np), background: "transparent" }}>
-                OPEN THE TASKS →
-              </button>
-            </div>
-          ) : null;
-        })()}
+        {taskOpen(deckKey).some((t) => effImp(t) === "urgent") && DeckPanel(deckKey, "nope")}
         <div className="flex items-center justify-between mb-2">
           <Rubric>THE NOPE STACK</Rubric>
           <button
@@ -3059,72 +3123,6 @@ function App() {
     const importants = open.filter((t) => effImp(t) === "important");
     const overCap = importants.length - (Number(S.impCap) || 30);
     if (meetView) return MeetingsView();
-    const startTaskEdit = (t) => {
-      setEditTaskId(t.id);
-      setEditTaskText(t.text);
-      setEditTaskImp(t.imp || "normal");
-      setEditTaskMind(sizeOf(t));
-      setEditTaskDate(t.urgentAt ? toLocalInput(t.urgentAt).slice(0, 10) : "");
-      setEditFrom("deck");
-    };
-    const TaskEditor = () => (
-      <div className="mt-2 flex flex-col gap-2">
-        <input
-          value={editTaskText}
-          onChange={(e) => setEditTaskText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") saveTaskEdit(activeKey);
-          }}
-          autoFocus
-          className="w-full px-2 py-1"
-          style={{ ...inputS13, fontSize: 13.5 }}
-        />
-        <div className="flex gap-2">
-          {["urgent", "important", "normal"].map((v) => (
-            <button
-              key={v}
-              onClick={() => setEditTaskImp(v)}
-              className="px-2 py-1"
-              style={chip(editTaskImp === v, v === "urgent" ? T.np : v === "important" ? T.fm : null)}
-            >
-              {v.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          {Object.values(SIZES).map((st) => (
-            <button
-              key={st.key}
-              onClick={() => setEditTaskMind(st.key)}
-              className="px-2 py-1"
-              style={chip(editTaskMind === st.key, st.color)}
-            >
-              {st.name.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        {editTaskImp === "important" && (
-          <div className="flex items-center gap-2">
-            <label style={{ ...mono(9) }}>URGENT ON</label>
-            <input
-              type="date"
-              value={editTaskDate}
-              onChange={(e) => setEditTaskDate(e.target.value)}
-              className="flex-1 px-2 py-1"
-              style={inputS13}
-            />
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button onClick={() => saveTaskEdit(activeKey)} className="flex-1 py-2" style={btnInk}>
-            SAVE
-          </button>
-          <button onClick={() => setEditTaskId(null)} className="flex-1 py-2" style={btnGhost}>
-            CANCEL
-          </button>
-        </div>
-      </div>
-    );
     return (
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -3210,118 +3208,28 @@ function App() {
               </div>
             );
           })()
-        ) : front ? (
-          <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
-            <p style={{ ...mono(10, T.ww) }}>ON DECK · WORK THE FRONT</p>
-            <div className="flex items-start gap-2 mt-1">
-              <span className="shrink-0 mt-1">{tierGlyph(front)}</span>
-              <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 16, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
-                {front.text}
-              </p>
-              {!front.virtual && (
-                <button onClick={() => startTaskEdit(front)} className="shrink-0" style={{ ...mono(11, T.rubric), background: "transparent" }}>
-                  ✎
-                </button>
-              )}
-            </div>
-            {front.virtual ? (
-              <div>
-                <button onClick={() => openVirtual(front)} className="w-full py-2 mt-3" style={btnInk}>
-                  {front.virtual === "cull"
-                    ? "OPEN THE CULL"
-                    : front.virtual === "meet"
-                    ? "OPEN THE ROSTER"
-                    : front.virtual === "aigaps"
-                    ? "OPEN THE GAPS"
-                    : "START SORTING"}
-                </button>
-                {front.virtual === "aigaps" && (
-                  <button onClick={snoozeAiGaps} className="w-full py-2 mt-2" style={btnGhost}>
-                    ↻ NOT TODAY
-                  </button>
-                )}
-                {front.virtual === "meet" && (
-                  <button
-                    onClick={() => snoozeMeeting(front.id.slice(5))}
-                    className="w-full py-2 mt-2"
-                    style={btnFmOutline}
-                  >
-                    ↻ IN PROGRESS — BACK TOMORROW
-                  </button>
-                )}
-              </div>
-            ) : editTaskId === front.id && editFrom === "deck" ? (
-              TaskEditor()
-            ) : (
-              <div className="flex gap-2 mt-3 items-center">
-                <button onClick={() => resolveTask(activeKey, front.id, "later")} className="flex-1 py-2" style={btnFmOutline}>
-                  ↻ LATER
-                </button>
-                <button onClick={() => keepOnDeck(activeKey, front.id, mindNow)} className="flex-1 py-2" style={btnWwOutline}>
-                  KEEP ON DECK
-                </button>
-                <button onClick={() => resolveTask(activeKey, front.id, "done")} className="px-3 py-2 shrink-0" style={btnWw}>
-                  DONE ✓
-                </button>
-              </div>
-            )}
-            {deck.slice(1).map((t) => (
-              <div key={t.id} className="mt-2" style={{ opacity: 0.85 }}>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0">{tierGlyph(t)}</span>
-                  <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
-                    {t.text}
-                  </span>
-                  {t.virtual ? (
-                    <button onClick={() => openVirtual(t)} className="shrink-0" style={{ ...mono(9, T.np), background: "transparent" }}>
-                      OPEN ▸
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => frontTask(activeKey, t.id, mindNow)}
-                        className="shrink-0 px-2 py-1"
-                        style={{ ...mono(9, T.panel), background: T.ww, border: `1px solid ${T.ink}`, borderRadius: 2 }}
-                      >
-                        WORK THIS ↑
-                      </button>
-                      <button onClick={() => startTaskEdit(t)} className="shrink-0" style={{ ...mono(10, T.rubric), background: "transparent" }}>
-                        ✎
-                      </button>
-                      {pinnedIds.includes(t.id) && (
-                        <button onClick={() => pinToggle(activeKey, t.id)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
-                          ✕
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-                {editTaskId === t.id && editFrom === "deck" && TaskEditor()}
-              </div>
-            ))}
-            {(() => {
-              if (activeKey !== "work") return null;
-              const dueN = meetingsDue().length;
-              const onDeck = deck.filter((t) => t.virtual === "meet").length;
-              if (dueN <= onDeck) return null;
-              return (
-                <button
-                  onClick={() => setMeetView(true)}
-                  className="mt-2"
-                  style={{ ...mono(9, T.np), background: "transparent" }}
-                >
-                  ⚑ {dueN - onDeck} MORE MEETING{dueN - onDeck === 1 ? "" : "S"} TO SET UP →
-                </button>
-              );
-            })()}
-          </div>
         ) : (
-          <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
-            Nothing on deck for {STATES[mindNow] ? STATES[mindNow].name : "this state"} — add a task
-            with the + button.
-          </p>
+          DeckPanel(activeKey, mindNow)
         )}
 
+        <div className="flex items-center gap-3 mb-2">
+          <button onClick={() => setShowAll(!showAll)} style={{ ...mono(10, T.ink), background: "transparent" }}>
+            {showAll ? "HIDE THE LIST ▾" : `SHOW ALL TASKS (${open.length}) ▸`}
+          </button>
+          {unsortedList.length > 0 && (
+            <button
+              onClick={() => {
+                setQaImp("important");
+                setQaMind("small");
+                setSortOpen(true);
+              }}
+              style={{ ...mono(10, T.ww), background: "transparent" }}
+            >
+              SORT {unsortedList.length} ▸
+            </button>
+          )}
+        </div>
+        {showAll && (<>
         <div className="flex flex-col gap-1">
           {list.length === 0 && (
             <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
@@ -3339,7 +3247,7 @@ function App() {
                   isEd
                     ? undefined
                     : t.state === "open"
-                    ? () => pinToggle(activeKey, t.id)
+                    ? () => dotToggle(activeKey, t.id)
                     : t.state === "done"
                     ? () => reopenTask(activeKey, t.id)
                     : undefined
@@ -3392,7 +3300,7 @@ function App() {
                       {t.state === "open" && (
                         <span style={{ color: T.sub, fontSize: 10.5 }}>
                           {" "}· {sizeOf(t)}
-                          {isPinned ? " · deck" : ""}
+                          {t.dot ? " · ●" : ""}
                           {t.benchUntil && t.benchUntil > now ? " · later" : ""}
                           {t.urgentAt && effImp(t) !== "urgent"
                             ? ` · ⚑${new Date(t.urgentAt).getMonth() + 1}/${new Date(t.urgentAt).getDate()}`
@@ -3544,11 +3452,12 @@ function App() {
           </div>
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          How it works: up to three tasks wait on deck and you always work the front one. ⚑ Urgents
-          — including meetings that need setting up — take the front slots (at most two), then your
-          pinned tasks, then ◆ importants and normals tagged for your current state. Importants
-          turn urgent on their date. Tap a task to pin it on deck; tap a ✓ task to reopen it.
+          How it works: ⚑ urgents always come first. Full Mind deals the next three from your FVP
+          chain (● dotted important small tasks, worked from the bottom up), plus a meeting to set up
+          and one random normal task for the day. Wu Wei shows two Big tasks. Nope shows only urgents.
+          Tap a task here to dot or un-dot it; tap a ✓ task to reopen it.
         </p>
+        </>)}
       </div>
     );
   };
@@ -4446,18 +4355,6 @@ function App() {
   };
   const MoreView = () => (
     <div className="flex flex-col gap-2">
-      <button
-        onClick={openGap}
-        className="w-full text-left px-5 py-4 transition active:translate-y-px"
-        style={{ ...card, borderLeft: pendingGap ? `4px solid ${T.rubric}` : card.borderLeft }}
-      >
-        <span style={{ fontFamily: FONT.disp, fontSize: 26, color: T.ink }}>The Gap</span>
-        <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: pendingGap ? T.rubric : T.sub, marginTop: 2 }}>
-          {pendingGap
-            ? fmtDur(Date.now() - pendingGap) + " unaccounted since " + fmtTime(pendingGap) + " — fill it in"
-            : "Account for time the book was closed"}
-        </p>
-      </button>
       {[
         { label: "AI Gaps", to: "aigaps", desc: "What AI cannot do for me yet" },
         { label: "Training", to: "train", desc: "The quest, sessions, miles" },
@@ -4894,6 +4791,49 @@ function App() {
         </div>
       )}
 
+      {/* FVP scan */}
+      {scan && (() => {
+        const list = data.tasks[scan.key] || [];
+        const txt = (id) => (list.find((t) => t.id === id) || {}).text || "";
+        const bench = scan.chain[scan.chain.length - 1];
+        const cand = scan.ids[scan.i];
+        return (
+          <div className="fixed left-0 right-0 px-4" style={{ bottom: 64, zIndex: 27 }}>
+            <div
+              className="max-w-md mx-auto px-4 py-4"
+              style={{ ...card, boxShadow: `inset 0 0 0 3px ${T.panel}, inset 0 0 0 4px ${T.lineSoft}, 0 -8px 20px rgba(43,29,16,0.3)` }}
+            >
+              <div className="flex items-center justify-between">
+                <p style={{ ...mono(10, T.rubric) }}>
+                  ¶ FVP SCAN{scan.which === "big" ? " · BIG" : ""} · {scan.i} OF {scan.ids.length - 1}
+                </p>
+                <p style={{ ...mono(10, T.sub) }}>● {scan.chain.length}</p>
+              </div>
+              <p className="mt-3" style={{ ...mono(9) }}>DO I WANT TO DO</p>
+              <p style={{ fontFamily: FONT.body, fontSize: 17, fontWeight: 700, color: T.ink, lineHeight: 1.35 }}>{txt(cand)}</p>
+              <p className="mt-2" style={{ ...mono(9) }}>MORE THAN</p>
+              <p style={{ fontFamily: FONT.body, fontSize: 14, color: T.sub, lineHeight: 1.35 }}>● {txt(bench)}</p>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => scanAnswer(true)} className="flex-1 py-3" style={btnInk}>
+                  YES — DOT IT
+                </button>
+                <button onClick={() => scanAnswer(false)} className="flex-1 py-3" style={btnGhost}>
+                  NO
+                </button>
+              </div>
+              <div className="flex justify-between mt-3">
+                <button onClick={scanStop} style={{ ...mono(9, T.ww), background: "transparent" }}>
+                  STOP — KEEP {scan.chain.length} DOTTED
+                </button>
+                <button onClick={scanNotNow} style={{ ...mono(9), background: "transparent" }}>
+                  NOT NOW
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* quick add */}
       {qaOpen && (
         <div className="fixed left-0 right-0 px-4" style={{ bottom: 64, zIndex: 26 }}>
@@ -4964,7 +4904,7 @@ function App() {
       )}
 
       {/* the + */}
-      {!medOpen && !qaOpen && (
+      {!medOpen && !qaOpen && !scan && (
         <button
           onClick={() => {
             setQaList(taskKeyNow);
