@@ -2529,9 +2529,20 @@ function App() {
           )}
         </div>
         {!front ? (
-          <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
-            {mind === "nope" ? "No urgent tasks. Work the stack." : "Nothing on deck — add a task with the + button."}
-          </p>
+          <>
+            <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
+              {mind === "nope" ? "No urgent tasks. Work the stack." : "Nothing on deck — add a task with the + button."}
+            </p>
+            {mind === "nope" && (
+              <button
+                onClick={() => setView({ name: "state", state: "nope" })}
+                className="w-full py-2 mt-3"
+                style={btnInk}
+              >
+                OPEN THE NOPE STACK ▸
+              </button>
+            )}
+          </>
         ) : (
           <>
             <div className="flex items-start gap-2 mt-2">
