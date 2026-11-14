@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261102-154042 -->
+<!-- build 20261114-071116 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -520,6 +520,12 @@ function App() {
 
   // which nope stack is shown/edited; null = follow the clock
   const [stackView, setStackView] = useState(null); // 'work' | 'off' | null
+  const [nopeIdx, setNopeIdx] = useState(0); // which Nope stack item is showing
+  const [nopeDir, setNopeDir] = useState(1); // 1 = going down the stack, -1 = going back up
+  useEffect(() => {
+    setNopeIdx(0);
+    setNopeDir(1);
+  }, [activeCheckin]); // every new Nope check-in starts at Meditate
   const [editStack, setEditStack] = useState(isWorkHours() ? "work" : "off");
 
   // meditation timer
@@ -2679,6 +2685,28 @@ function App() {
     const autoKey = isWorkHours(S) ? "work" : "off";
     const activeKey = stackView || autoKey;
     const stack = data.stacks[activeKey] || [];
+    // one item at a time: NEXT moves down the stack; at the bottom it turns back up
+    const idx = Math.min(nopeIdx, Math.max(stack.length - 1, 0));
+    const advanceNope = () => {
+      if (stack.length < 2) return;
+      let next = idx;
+      let dir = nopeDir;
+      if (dir === 1) {
+        if (idx < stack.length - 1) next = idx + 1;
+        else {
+          dir = -1;
+          next = idx - 1;
+        }
+      } else {
+        if (idx > 0) next = idx - 1;
+        else {
+          dir = 1;
+          next = idx + 1;
+        }
+      }
+      setNopeIdx(next);
+      setNopeDir(dir);
+    };
     return (
       <div>
         <BackLink />
@@ -2705,7 +2733,11 @@ function App() {
             return (
               <button
                 key={k}
-                onClick={() => setStackView(k)}
+                onClick={() => {
+                  setStackView(k);
+                  setNopeIdx(0);
+                  setNopeDir(1);
+                }}
                 className="px-3 py-1 transition"
                 style={{
                   background: on ? T.ink : "transparent",
@@ -2725,7 +2757,8 @@ function App() {
           })}
         </div>
         <div className="flex flex-col gap-2">
-          {stack.map((item, i) => {
+          {(stack.length ? [idx] : []).map((i) => {
+            const item = stack[i];
             const done = tried.includes(item);
             const last = i === stack.length - 1;
             const isMed = /medit/i.test(item);
@@ -2837,6 +2870,15 @@ function App() {
             );
           })}
         </div>
+        {stack.length > 1 && (
+          <button
+            onClick={advanceNope}
+            className="w-full py-3 mt-3 transition active:translate-y-px"
+            style={btnInk}
+          >
+            NEXT ▸
+          </button>
+        )}
         <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: T.sub }}>
           Tap what you try — the book learns what actually pulls you out.
         </p>
@@ -4658,6 +4700,7 @@ function App() {
         {view.name === "settings" && SettingsView()}
         {view.name === "aigaps" && AiGapsView()}
       </div>
+
 
       {/* meditation overlay */}
       {medOpen && (
