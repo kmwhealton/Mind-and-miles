@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261114-071116 -->
+<!-- build 20261114-072141 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -292,9 +292,28 @@ const DEFAULTS = {
   held: { work: {}, home: {} },
   front: { work: null, home: null },
   gaps: [],
+  breaks: [], // "done for now" moments: what was chosen, and where it led
   aiGaps: [],
   aiSnooze: null,
   meetings: [],
+};
+
+// ————— "done for now": the break flow —————
+// when something hits and the work stops, the book asks what you need instead of what to do
+const REST_OPTIONS = [
+  { key: "meditate", label: "Meditate", mins: [5, 12, 30], line: "Nothing to do. Nowhere to be." },
+  { key: "nap", label: "Nap", mins: [20, 30, 45], line: "Lie down. The bell will wake you." },
+  { key: "move", label: "Walk / exercise", mins: [15, 30, 60], line: "Go move. The bell will call you back." },
+  { key: "still", label: "Just stop", mins: [10, 20, 30], line: "No phone, no task. Just stop." },
+];
+const breakSummary = (b) => {
+  const parts = [];
+  if (b.talked) parts.push("talked it through");
+  (b.tasks || []).forEach((t) => parts.push("did: " + t));
+  (b.rests || []).forEach((r) => parts.push(r.what.toLowerCase() + " " + r.min + "m"));
+  if (!parts.length) parts.push("nothing chosen");
+  const back = b.back && STATES[b.back] ? "back → " + STATES[b.back].name : "";
+  return parts.join(" · ") + (back ? " · " + back : "");
 };
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -535,6 +554,11 @@ function App() {
   const [medLeft, setMedLeft] = useState(0);
   const [medDone, setMedDone] = useState(false);
   const [medDoor, setMedDoor] = useState(null); // task text when the timer is a two-minute door
+  const [medLine, setMedLine] = useState(null); // what the timer says while a break-rest runs
+  // done for now: {id, step: 'choose'|'talk'|'push'|'rest'|'back', skip, did:[], rests:[]}
+  const [brk, setBrk] = useState(null);
+  const [brkWhat, setBrkWhat] = useState("");
+  const [brkNeed, setBrkNeed] = useState("");
   const audioRef = useRef(null);
   const medEndRef = useRef(0);
   const wakeLockRef = useRef(null);
@@ -612,6 +636,7 @@ function App() {
             merged.gaps = Array.isArray(parsed.gaps) ? parsed.gaps : [];
             merged.aiGaps = Array.isArray(parsed.aiGaps) ? parsed.aiGaps : [];
             merged.aiSnooze = parsed.aiSnooze || null;
+            merged.breaks = Array.isArray(parsed.breaks) ? parsed.breaks : [];
             if (!parsed.taskRev || parsed.taskRev < 3) {
               const up = (arr) =>
                 (arr || []).map((t) => ({
@@ -840,7 +865,7 @@ function App() {
   };
 
   // ————— actions —————
-  const checkIn = (stateKey) => {
+  const checkIn = (stateKey, extra = {}) => {
     const c = { id: uid(), state: stateKey, ts: Date.now(), tried: [] };
     if (stateKey === "nope") {
       const front = workTask(deckKey, mindNow);
@@ -855,7 +880,7 @@ function App() {
         overCap: importantCount(deckKey) > (Number(S.impCap) || 30),
       };
     } catch (e) {}
-    commit({ ...data, checkins: [c, ...data.checkins] });
+    commit({ ...data, ...extra, checkins: [c, ...data.checkins] });
     setActiveCheckin(c.id);
     setStackView(null); // follow the clock again on a fresh check-in
     setView({ name: "state", state: stateKey });
@@ -962,6 +987,112 @@ function App() {
     setMedLeft(0);
     setMedDone(false);
     setMedDoor(null);
+    setMedLine(null);
+  };
+
+  // ————— done for now —————
+  // Something hit, the work stopped. Three honest answers: talk it through,
+  // do one thing anyway, or rest on a timer. Then: back to it, or more break.
+  const curBreak = () => (brk ? (data.breaks || []).find((b) => b.id === brk.id) || null : null);
+  const patchBreak = (patch, d = data) => ({
+    ...d,
+    breaks: (d.breaks || []).map((b) => (brk && b.id === brk.id ? { ...b, ...patch } : b)),
+  });
+  const startBreak = () => {
+    const front = workTask(deckKey, mindNow);
+    const b = {
+      id: uid(),
+      ts: Date.now(),
+      from: mindNow,
+      list: deckKey,
+      avoiding: front && !front.virtual ? front.text : null,
+      talked: false,
+      talk: null,
+      tasks: [],
+      rests: [],
+      back: null,
+    };
+    commit({ ...data, breaks: [b, ...(data.breaks || [])] });
+    setBrk({ id: b.id, step: "choose", skip: 0, did: [], rests: [] });
+    setBrkWhat("");
+    setBrkNeed("");
+    setView({ name: "break" });
+  };
+  const talkItThrough = (withClaude) => {
+    const what = brkWhat.trim();
+    const need = brkNeed.trim();
+    const b = curBreak();
+    const note = [what, need].filter(Boolean).join(" — ");
+    commit(patchBreak({ talked: true, talk: note || (b && b.talk) || null }));
+    setBrk({ ...brk, step: "choose" });
+    if (!withClaude) {
+      ping("Set down");
+      return;
+    }
+    const lines = [];
+    lines.push(
+      `Something emotional just came up${isWorkHours(S) ? " at work" : ""}, and I've decided I'm done for now. I would like to talk it through with you.`
+    );
+    if (b && b.from && STATES[b.from])
+      lines.push(
+        `Before this I was in what I call ${STATES[b.from].name} (${STATES[b.from].tag})${b.avoiding ? `, and the task in front of me was: ${b.avoiding}` : ""}.`
+      );
+    if (what) lines.push(`What just happened: ${what}`);
+    if (need) lines.push(`What I think I need: ${need}`);
+    lines.push(
+      "Please listen first and ask me a question or two. Once I've talked it through, help me decide whether to push through with one small task or to take a real break, such as meditating, napping, or exercising."
+    );
+    const prompt = lines.join("\n\n");
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(prompt).catch(() => {});
+    } catch (e) {}
+    try {
+      window.open("https://claude.ai/new?q=" + encodeURIComponent(prompt), "_blank");
+    } catch (e) {}
+  };
+  const pushCands = () => {
+    const seen = new Set();
+    const out = [];
+    const add = (t) => {
+      if (t && !t.virtual && !seen.has(t.id)) {
+        seen.add(t.id);
+        out.push(t);
+      }
+    };
+    deckFor(deckKey, "fullmind").forEach(add);
+    freeOf(deckKey)
+      .filter((t) => sizeOf(t) === "small")
+      .forEach(add);
+    return out;
+  };
+  const pushDone = (t) => {
+    resolveTask(deckKey, t.id, "done");
+    setBrk({ ...brk, step: "back", did: [...(brk.did || []), t.text] });
+  };
+  const startRest = (r, min) => {
+    setBrk({ ...brk, step: "back", rests: [...(brk.rests || []), { what: r.label, min }] });
+    startMeditation(min * 60, null);
+    setMedOrigin("break");
+    setMedLine(r.line);
+  };
+  const finishBreak = (next) => {
+    if (medOpen) closeMeditation();
+    if (next === "more") {
+      setBrk({ ...brk, step: "choose" });
+      setView({ name: "break" });
+      return;
+    }
+    const b = curBreak();
+    const upd = b
+      ? patchBreak({
+          tasks: [...(b.tasks || []), ...((brk && brk.did) || [])],
+          rests: [...(b.rests || []), ...((brk && brk.rests) || [])],
+          back: next,
+          endTs: Date.now(),
+        })
+      : data;
+    setBrk(null);
+    checkIn(next, { breaks: upd.breaks });
   };
 
   const releaseDump = () => {
@@ -1024,6 +1155,7 @@ function App() {
     if (type === "task")
       commit({ ...data, taskLog: (data.taskLog || []).filter((x) => x.id !== id) });
     if (type === "gap") commit({ ...data, gaps: (data.gaps || []).filter((x) => x.id !== id) });
+    if (type === "break") commit({ ...data, breaks: (data.breaks || []).filter((x) => x.id !== id) });
   };
 
   const stackMove = (key, i, dir) => {
@@ -1082,6 +1214,7 @@ function App() {
     if (editEntry.type === "workout") commit({ ...data, workouts: map(data.workouts) });
     if (editEntry.type === "dump") commit({ ...data, dumps: map(data.dumps) });
     if (editEntry.type === "task") commit({ ...data, taskLog: map(data.taskLog || []) });
+    if (editEntry.type === "break") commit({ ...data, breaks: map(data.breaks || []) });
     setEditEntry(null);
     ping("Amended");
   };
@@ -1129,6 +1262,7 @@ function App() {
         taskLog: byId(p.taskLog, data.taskLog),
         gaps: byId(p.gaps, data.gaps),
         aiGaps: mergeTasks(p.aiGaps, data.aiGaps),
+        breaks: byId(p.breaks, data.breaks),
         stacks: p.stacks && p.stacks.work && p.stacks.off ? p.stacks : data.stacks,
         tasks: {
           work: mergeTasks(p.tasks && p.tasks.work, data.tasks.work),
@@ -1963,6 +2097,23 @@ function App() {
   data.checkins
     .filter((c) => c.state === "nope")
     .forEach((c) => (c.tried || []).forEach((t) => (toolTally[t] = (toolTally[t] || 0) + 1)));
+  // what actually gets you back after "done for now"
+  const breakTally = {};
+  (data.breaks || [])
+    .filter((b) => b.back)
+    .forEach((b) => {
+      const keys = [
+        ...(b.talked ? ["Talked it through"] : []),
+        ...((b.tasks || []).length ? ["One thing anyway"] : []),
+        ...[...new Set((b.rests || []).map((r) => r.what))],
+      ];
+      keys.forEach((k) => {
+        const x = breakTally[k] || (breakTally[k] = { n: 0, back: 0 });
+        x.n += 1;
+        if (b.back !== "nope") x.back += 1;
+      });
+    });
+  const breakRows = Object.entries(breakTally).sort((a, b) => b[1].n - a[1].n);
   const topTools = Object.entries(toolTally)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
@@ -1973,6 +2124,7 @@ function App() {
     ...data.dumps.map((d) => ({ ...d, type: "dump" })),
     ...(data.taskLog || []).map((x) => ({ ...x, type: "task" })),
     ...(data.gaps || []).map((x) => ({ ...x, type: "gap" })),
+    ...(data.breaks || []).map((x) => ({ ...x, type: "break" })),
   ]
     .sort((a, b) => b.ts - a.ts);
 
@@ -2035,6 +2187,8 @@ function App() {
             lines.push(`- ${t} · ${e.how === "done" ? "✓ Done" : e.how === "door" ? "⚿ Two-minute door" : "↻ Progressed"}: ${e.text}`);
           } else if (e.type === "gap") {
             lines.push(`- ${t} · ⌛ ${e.activity} — ${fmtDur(e.to - e.ts)}${e.away ? " (intentional)" : e.state ? ` (in ${STATES[e.state] ? STATES[e.state].name : e.state})` : ""}`);
+          } else if (e.type === "break") {
+            lines.push(`- ${t} · ☾ Done for now — ${breakSummary(e)}${e.talk ? ` — “${e.talk}”` : ""}`);
           } else {
             lines.push(`- ${t} · Note: ${e.text}`);
           }
@@ -2148,7 +2302,7 @@ function App() {
   const NavBtn = ({ id, label }) => {
     const active =
       view.name === id ||
-      (id === "now" && (view.name === "state" || view.name === "stack")) ||
+      (id === "now" && (view.name === "state" || view.name === "stack" || view.name === "break")) ||
       (id === "more" && ["more", "train", "log", "settings", "aigaps"].includes(view.name));
     return (
       <button
@@ -2513,6 +2667,7 @@ function App() {
           </button>
         ))}
       </div>
+      <div className="mt-3">{DoneForNowBtn()}</div>
       <p className="mt-5 text-center" style={{ ...mono(10) }}>
         THIS DAY · {todayCheckins.length} {todayCheckins.length === 1 ? "ENTRY" : "ENTRIES"}
         {todayMiles > 0 ? ` · ${todayMiles.toFixed(1)} MI` : ""}
@@ -2663,11 +2818,230 @@ function App() {
     </button>
   );
 
+  const DoneForNowBtn = () => (
+    <button
+      onClick={startBreak}
+      className="w-full text-left px-4 py-3 transition active:translate-y-px"
+      style={{ ...card, borderLeft: `4px solid ${T.rubric}` }}
+    >
+      <span style={{ ...mono(11, T.rubric) }}>☾ DONE FOR NOW</span>
+      <span style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 12.5, color: T.sub, marginLeft: 8 }}>
+        something hit — talk, one thing, or rest
+      </span>
+    </button>
+  );
+
+  const BreakView = () => {
+    const b = curBreak();
+    const step = brk ? brk.step : null;
+    const bigBtn = (title, desc, onClick, color, done) => (
+      <button
+        onClick={onClick}
+        className="w-full text-left px-5 py-4 transition active:translate-y-px"
+        style={{ ...card, borderLeft: `4px solid ${color}`, opacity: done ? 0.6 : 1 }}
+      >
+        <span style={{ fontFamily: FONT.disp, fontSize: 30, lineHeight: 1.05, color }}>
+          {title}
+          {done ? " ✓" : ""}
+        </span>
+        <p className="mt-1" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub, lineHeight: 1.45 }}>
+          {desc}
+        </p>
+      </button>
+    );
+    const backRow = (
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <button onClick={() => finishBreak("fullmind")} className="flex-1 py-3" style={{ ...btnInk, background: T.fm, borderColor: T.ink }}>
+            → FULL MIND
+          </button>
+          <button onClick={() => finishBreak("wuwei")} className="flex-1 py-3" style={{ ...btnInk, background: T.ww, borderColor: T.ink }}>
+            → WU WEI
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => finishBreak("more")} className="flex-1 py-3" style={btnGhost}>
+            MORE BREAK
+          </button>
+          <button onClick={() => finishBreak("nope")} className="flex-1 py-3" style={{ ...btnGhost, color: T.np, borderColor: T.np }}>
+            STILL DONE → NOPE
+          </button>
+        </div>
+      </div>
+    );
+    const header = (line) => (
+      <div className="mb-5">
+        <div className="flex items-center gap-3">
+          <span style={{ fontFamily: FONT.body, fontSize: 26, color: T.rubric }}>☾</span>
+          <div style={{ fontFamily: FONT.disp, fontSize: 44, color: T.rubric, lineHeight: 1 }}>Done for Now</div>
+        </div>
+        <p className="mt-2" style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, opacity: 0.9, lineHeight: 1.5 }}>
+          {line}
+        </p>
+      </div>
+    );
+    if (!brk || !b) {
+      return (
+        <div>
+          <BackLink />
+          {header("Something hit and the work stopped. That's allowed.")}
+          {DoneForNowBtn()}
+        </div>
+      );
+    }
+    const toChoose = (
+      <button onClick={() => setBrk({ ...brk, step: "choose" })} className="mb-4" style={{ ...mono(11), background: "transparent" }}>
+        ← the three choices
+      </button>
+    );
+    if (step === "talk") {
+      return (
+        <div>
+          {toChoose}
+          {header("Get it out first. A line each is plenty — or leave them blank.")}
+          <p style={{ ...mono(9) }}>WHAT JUST HAPPENED?</p>
+          <textarea
+            value={brkWhat}
+            onChange={(e) => setBrkWhat(e.target.value)}
+            rows={3}
+            className="w-full p-2 mt-1"
+            style={{ ...inputS14, resize: "vertical" }}
+          />
+          <p className="mt-3" style={{ ...mono(9) }}>WHAT DO I NEED RIGHT NOW?</p>
+          <textarea
+            value={brkNeed}
+            onChange={(e) => setBrkNeed(e.target.value)}
+            rows={2}
+            className="w-full p-2 mt-1"
+            style={{ ...inputS14, resize: "vertical" }}
+          />
+          <button onClick={() => talkItThrough(true)} className="w-full py-3 mt-3" style={btnInk}>
+            TALK IT THROUGH WITH CLAUDE →
+          </button>
+          <button onClick={() => talkItThrough(false)} className="w-full py-2 mt-2" style={btnGhost}>
+            JUST WRITING IT WAS ENOUGH — SAVE
+          </button>
+          <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
+            Claude opens with what you wrote already filled in. It's copied too, in case the box
+            comes up empty — just paste. When you're talked out, come back here and choose: one
+            thing, or rest.
+          </p>
+        </div>
+      );
+    }
+    if (step === "push") {
+      const cands = pushCands();
+      const t = cands.length ? cands[(brk.skip || 0) % cands.length] : null;
+      return (
+        <div>
+          {toChoose}
+          {header("Just one. Nothing else is on the page.")}
+          {!t ? (
+            <div className="px-4 py-4" style={card}>
+              <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+                Nothing small on the {deckKey} list. Rest instead?
+              </p>
+              <button onClick={() => setBrk({ ...brk, step: "rest" })} className="w-full py-2 mt-3" style={btnInk}>
+                REST
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 py-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 mt-1">{tierGlyph(t)}</span>
+                <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 18, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+                  {t.text}
+                </p>
+              </div>
+              <button onClick={() => pushDone(t)} className="w-full py-3 mt-3" style={{ ...btnWw, fontSize: 12 }}>
+                DONE ✓
+              </button>
+              <div className="flex gap-2 mt-2">
+                {cands.length > 1 && (
+                  <button onClick={() => setBrk({ ...brk, skip: (brk.skip || 0) + 1 })} className="flex-1 py-2" style={btnGhost}>
+                    A DIFFERENT ONE ({((brk.skip || 0) % cands.length) + 1}/{cands.length})
+                  </button>
+                )}
+                <button onClick={() => setBrk({ ...brk, step: "rest" })} className="flex-1 py-2" style={btnGhost}>
+                  NOT EVEN THIS — REST
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (step === "rest") {
+      return (
+        <div>
+          {toChoose}
+          {header("A real break, on a timer. No guilt — the bell brings you back.")}
+          <div className="flex flex-col gap-2">
+            {REST_OPTIONS.map((r) => (
+              <div key={r.key} className="px-4 py-3" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+                <span style={{ fontFamily: FONT.body, fontSize: 15, fontWeight: 600, color: T.ink }}>{r.label}</span>
+                <div className="flex gap-2 mt-2">
+                  {r.mins.map((m) => (
+                    <button key={m} onClick={() => startRest(r, m)} className="flex-1 py-2" style={btnWwOutline}>
+                      {m} MIN.
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (step === "back") {
+      const did = brk.did || [];
+      const rests = brk.rests || [];
+      return (
+        <div>
+          {header("How is it now? Back to it — or more break. Either is fine.")}
+          {(did.length > 0 || rests.length > 0 || b.talked) && (
+            <p className="mb-3" style={{ fontFamily: FONT.body, fontSize: 13, color: T.sub, lineHeight: 1.5 }}>
+              {[
+                b.talked ? "Talked it through" : null,
+                ...did.map((x) => "Did: " + x),
+                ...rests.map((r) => r.what + " " + r.min + "m"),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+          {backRow}
+          {did.length > 0 && (
+            <button onClick={() => setBrk({ ...brk, step: "push" })} className="w-full py-2 mt-2" style={btnFmOutline}>
+              ONE MORE THING
+            </button>
+          )}
+        </div>
+      );
+    }
+    // the three choices
+    return (
+      <div>
+        <BackLink />
+        {header("Something hit. That's allowed. What do you need right now?")}
+        <div className="flex flex-col gap-3">
+          {bigBtn("Talk it through", "Say what happened. Write a line, then talk it out with Claude.", () => setBrk({ ...brk, step: "talk" }), T.rubric, b.talked)}
+          {bigBtn("One thing anyway", "A single small task — nothing else on the screen.", () => setBrk({ ...brk, step: "push", skip: 0 }), T.fm)}
+          {bigBtn("Rest", "Meditate, nap, move, or just stop — on a timer.", () => setBrk({ ...brk, step: "rest" }), T.ww)}
+        </div>
+        <button onClick={() => setBrk({ ...brk, step: "back" })} className="mt-5" style={{ ...mono(10, T.sub), background: "transparent" }}>
+          I'M ALREADY OK — BACK TO IT ▸
+        </button>
+      </div>
+    );
+  };
+
   const FullMindView = () => (
     <div>
       <BackLink />
       <StateHeader s={STATES.fullmind} line="Just the tasks. Work the front." />
       {DeckPanel(deckKey, "fullmind")}
+      {DoneForNowBtn()}
     </div>
   );
 
@@ -2676,6 +3050,7 @@ function App() {
       <BackLink />
       <StateHeader s={STATES.wuwei} line="You're in it. Big work only." />
       {DeckPanel(deckKey, "wuwei")}
+      {DoneForNowBtn()}
     </div>
   );
 
@@ -2886,6 +3261,7 @@ function App() {
           <TransitionBtn label="→ FULL MIND" to="fullmind" />
           <TransitionBtn label="→ WU WEI" to="wuwei" />
         </div>
+        <div className="mt-3">{DoneForNowBtn()}</div>
       </div>
     );
   };
@@ -3933,6 +4309,23 @@ function App() {
         before the record began. Tap a day for its tally.
       </p>
 
+      {breakRows.length > 0 && (
+        <div className="mb-4">
+          <Rubric className="mb-2">AFTER "DONE FOR NOW"</Rubric>
+          <div className="px-4 py-3 flex flex-col gap-2" style={card}>
+            {breakRows.map(([k, x]) => (
+              <div key={k} className="flex items-center gap-3">
+                <span style={{ fontFamily: FONT.body, fontSize: 12, color: T.rubric }}>☾</span>
+                <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>{k}</span>
+                <span style={{ ...mono(10), letterSpacing: 0 }}>
+                  ×{x.n} · back to work {x.back}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {topTools.length > 0 && (
         <div className="mb-4">
           <Rubric className="mb-2">WHAT PULLS YOU OUT OF NOPE</Rubric>
@@ -3976,6 +4369,9 @@ function App() {
                   )}
                   {e.type === "gap" && (
                     <span style={{ fontFamily: FONT.body, fontSize: 12, color: e.away ? T.ww : e.state && STATES[e.state] ? STATES[e.state].color : T.sub }}>{e.away ? "⛰" : "⌛"}</span>
+                  )}
+                  {e.type === "break" && (
+                    <span style={{ fontFamily: FONT.body, fontSize: 12, color: T.rubric }}>☾</span>
                   )}
                 </span>
                 <div className="flex-1">
@@ -4026,7 +4422,18 @@ function App() {
                         </span>
                       </span>
                     )}
+                    {e.type === "break" && (
+                      <span>
+                        <span style={{ fontWeight: 600 }}>Done for now</span>
+                        <span style={{ color: T.sub, fontSize: 11.5 }}> · {breakSummary(e)}</span>
+                      </span>
+                    )}
                   </span>
+                  {e.type === "break" && e.talk && (
+                    <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, marginTop: 2 }}>
+                      “{e.talk}”
+                    </p>
+                  )}
                   {e.type === "checkin" && e.avoiding && (
                     <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.np, marginTop: 2 }}>
                       avoiding: {e.avoiding}
@@ -4699,6 +5106,7 @@ function App() {
         {view.name === "more" && MoreView()}
         {view.name === "settings" && SettingsView()}
         {view.name === "aigaps" && AiGapsView()}
+        {view.name === "break" && BreakView()}
       </div>
 
 
@@ -4734,7 +5142,7 @@ function App() {
                 className="mt-6 text-center"
                 style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 14, color: T.sub }}
               >
-                {medDoor ? "Two minutes. Just begin." : "Nothing to do. Nowhere to be."}
+                {medDoor ? "Two minutes. Just begin." : medLine || "Nothing to do. Nowhere to be."}
               </p>
               {medDoor && (
                 <p className="mt-1 text-center px-6" style={{ fontFamily: FONT.body, fontSize: 13, fontWeight: 600, color: T.ink }}>
@@ -4781,6 +5189,28 @@ function App() {
               >
                 END EARLY
               </button>
+            </div>
+          ) : medOrigin === "break" ? (
+            <div className="flex flex-col items-center w-full" style={{ maxWidth: 320 }}>
+              <p className="mt-6 text-center" style={{ ...mono(11, T.ww) }}>
+                TIME'S UP · BACK TO IT, OR MORE BREAK?
+              </p>
+              <div className="flex gap-2 mt-3 w-full">
+                <button onClick={() => finishBreak("fullmind")} className="flex-1 py-3" style={{ ...btnInk, background: T.fm }}>
+                  → FULL MIND
+                </button>
+                <button onClick={() => finishBreak("wuwei")} className="flex-1 py-3" style={{ ...btnInk, background: T.ww }}>
+                  → WU WEI
+                </button>
+              </div>
+              <div className="flex gap-2 mt-2 w-full">
+                <button onClick={() => finishBreak("more")} className="flex-1 py-3" style={btnGhost}>
+                  MORE BREAK
+                </button>
+                <button onClick={() => finishBreak("nope")} className="flex-1 py-3" style={{ ...btnGhost, color: T.np, borderColor: T.np }}>
+                  STILL DONE → NOPE
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center w-full" style={{ maxWidth: 320 }}>
