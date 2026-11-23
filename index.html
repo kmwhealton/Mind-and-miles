@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261114-072141 -->
+<!-- build 20261122-181315 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -82,13 +82,14 @@ const localStore = {
 };
 
 
+
 // ————————————————————————————————————————————————
 // MIND & MILES — A Wanderer's Book of Hours (rev. vii)
 // A gothic-medieval field log for mind states
 // (Wu Wei / Full Mind / NOPE) and miles.
 // Blackletter display, IM Fell text, vellum, rubricated
-// headers, roman numerals. Two Nope stacks: at work
-// (Mon–Fri 4:30a–4:00p) and at home. Chosen by the clock.
+// headers, roman numerals. One task list and one Nope
+// stack — the book is for home only.
 // ————————————————————————————————————————————————
 
 const KEY = "mind_miles_v1"; // unchanged — existing entries carry over
@@ -133,10 +134,7 @@ const STATES = {
   },
 };
 
-// work hours are settings-driven (defaults: Mon–Fri, 4:30a – 4:00p)
 const DEFAULT_SETTINGS = {
-  workStart: "04:30",
-  workEnd: "16:00",
   nopeHours: 5,
   otfTarget: 3,
   otfMiles: 2.5,
@@ -147,18 +145,7 @@ const DEFAULT_SETTINGS = {
   autoOpen: true,
 };
 const DAILY_REVIEW_TEXT = "Review notes for actions";
-const isWorkHours = (s = DEFAULT_SETTINGS, d = new Date()) => {
-  const day = d.getDay(); // 0 Sun … 6 Sat
-  if (day === 0 || day === 6) return false;
-  const parts = (v, fb) => {
-    const m = String(v || fb).split(":");
-    return (Number(m[0]) || 0) * 60 + (Number(m[1]) || 0);
-  };
-  const mins = d.getHours() * 60 + d.getMinutes();
-  return mins >= parts(s.workStart, "04:30") && mins < parts(s.workEnd, "16:00");
-};
-
-// from the handwritten page — during work hours
+// the old work stack — kept only so saved data still loads; never shown
 const DEFAULT_WORK_STACK = [
   "Meditate",
   "Exercise",
@@ -186,11 +173,6 @@ const DEFAULT_OFF_STACK = [
   "Instagram / TikTok",
   "Beer",
 ];
-
-const STACK_META = {
-  work: { label: "AT WORK · M–F 4:30–4" },
-  off: { label: "AT HOME" },
-};
 
 const MED_OPTIONS = [
   { label: "5 SEC", sec: 5 }, // for testing the bell
@@ -225,8 +207,6 @@ const GAP_ACTIVITIES = [
   "TV",
   "Drove",
   "Podcast",
-  "Worked",
-  "Meetings",
   "Ate",
   "Family",
   "Chores",
@@ -240,7 +220,7 @@ const GAP_ACTIVITIES = [
   "Don't remember",
 ];
 const NOPE_FLAVORS = ["Tired", "Overwhelmed", "Bored", "Anxious", "Avoiding", "Just don't wanna"];
-const NOPE_BEFORE = ["Meeting", "Email", "Ate", "Woke up", "Doomscroll", "Family", "Nothing"];
+const NOPE_BEFORE = ["Email", "Ate", "Woke up", "Doomscroll", "Family", "Nothing"];
 const EXIT_SHIFTS = ["Moved", "Ate", "Slept", "Talked", "Deadline", "Just started", "Time passed", "Don't know"];
 const GAP_DURATIONS = [
   { label: "15m", min: 15 },
@@ -481,26 +461,13 @@ function App() {
   const [editTaskMind, setEditTaskMind] = useState("small"); // "big" | "small"
   const [editTaskDate, setEditTaskDate] = useState("");
   const [editFrom, setEditFrom] = useState("list"); // 'list' | 'deck'
-  const [taskView, setTaskView] = useState(null); // 'work' | 'home' | null = follow the clock
   const [cullOpen, setCullOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [qaOpen, setQaOpen] = useState(false);
   const [qaText, setQaText] = useState("");
   const [qaImp, setQaImp] = useState("normal");
   const [qaMind, setQaMind] = useState("small"); // "big" | "small"
-  const [qaList, setQaList] = useState("work");
   const [qaDate, setQaDate] = useState("");
-  const [meetView, setMeetView] = useState(false);
-  const [mtName, setMtName] = useState("");
-  const [mtCadence, setMtCadence] = useState("");
-  const [agInputs, setAgInputs] = useState({});
-  const [editMeetId, setEditMeetId] = useState(null);
-  const [editMeetName, setEditMeetName] = useState("");
-  const [editMeetCadence, setEditMeetCadence] = useState("");
-  const [schedFor, setSchedFor] = useState(null);
-  const [schedDate, setSchedDate] = useState("");
-  const [lastMetFor, setLastMetFor] = useState(null);
-  const [lastMetDate, setLastMetDate] = useState("");
   const [aiText, setAiText] = useState("");
   const [minuteTick, setMinuteTick] = useState(0);
   const [scan, setScan] = useState(null); // FVP scan: {key, which, ids, i, chain}
@@ -537,15 +504,13 @@ function App() {
   const [logLimit, setLogLimit] = useState(30);
   const [backupText, setBackupText] = useState("");
 
-  // which nope stack is shown/edited; null = follow the clock
-  const [stackView, setStackView] = useState(null); // 'work' | 'off' | null
   const [nopeIdx, setNopeIdx] = useState(0); // which Nope stack item is showing
   const [nopeDir, setNopeDir] = useState(1); // 1 = going down the stack, -1 = going back up
   useEffect(() => {
     setNopeIdx(0);
     setNopeDir(1);
   }, [activeCheckin]); // every new Nope check-in starts at Meditate
-  const [editStack, setEditStack] = useState(isWorkHours() ? "work" : "off");
+  const editStack = "off"; // the one Nope stack (stored under its old "home" key)
 
   // meditation timer
   const [medOpen, setMedOpen] = useState(false);
@@ -882,7 +847,6 @@ function App() {
     } catch (e) {}
     commit({ ...data, ...extra, checkins: [c, ...data.checkins] });
     setActiveCheckin(c.id);
-    setStackView(null); // follow the clock again on a fresh check-in
     setView({ name: "state", state: stateKey });
   };
   const setCheckinField = (id, k, v) =>
@@ -1031,7 +995,7 @@ function App() {
     }
     const lines = [];
     lines.push(
-      `Something emotional just came up${isWorkHours(S) ? " at work" : ""}, and I've decided I'm done for now. I would like to talk it through with you.`
+      `Something emotional just came up, and I've decided I'm done for now. I would like to talk it through with you.`
     );
     if (b && b.from && STATES[b.from])
       lines.push(
@@ -1301,8 +1265,8 @@ function App() {
     }
   };
 
-  // ————— tasks: the deck (work / home) —————
-  const taskKeyNow = isWorkHours(S) ? "work" : "home";
+  // ————— tasks: the deck (one list — home) —————
+  const taskKeyNow = "home";
   const taskOpen = (key) => (data.tasks[key] || []).filter((t) => t.state === "open");
   const setTasks = (key, list) => commit({ ...data, tasks: { ...data.tasks, [key]: list } });
 
@@ -1341,18 +1305,6 @@ function App() {
     const ch = chainFor(key, which);
     return ch.length ? [...ch].reverse() : poolFor(key, which);
   };
-  const meetingVirtual = (key) => {
-    if (key !== "work") return null;
-    const m = meetingsDue()[0];
-    if (!m) return null;
-    const n = (m.agenda || []).length;
-    return {
-      id: "meet:" + m.id,
-      virtual: "meet",
-      text: "Set up meeting w/ " + m.name + (n ? " · " + n + " agenda item" + (n === 1 ? "" : "s") : ""),
-      imp: "urgent",
-    };
-  };
   const randoFor = (key) => {
     const r = data.rando && data.rando[key];
     if (!r || r.day !== new Date().toDateString()) return null;
@@ -1387,8 +1339,6 @@ function App() {
     } else {
       const slots = Math.max(3, urg.length);
       deck = fill([...urg], fromChain(key, "small"), slots);
-      const mv = meetingVirtual(key);
-      if (mv) deck.push({ ...mv, slot: "meeting" });
       const r = randoFor(key);
       if (r && !deck.some((d) => d.id === r.id)) deck.push({ ...r, slot: "rando" });
     }
@@ -1403,13 +1353,11 @@ function App() {
     return chosen ? [chosen, ...ordered.filter((t) => t.id !== fid)] : ordered;
   };
   const workTask = (key, mind) => deckFor(key, mind)[0] || null;
-  // every screen reads the same deck: the list you're viewing, else the clock's list
-  const deckKey = taskView || taskKeyNow;
+  // every screen reads the same deck
+  const deckKey = taskKeyNow;
   const openVirtual = (v) => {
-    setTaskView(deckKey);
     setView({ name: "tasks" });
     if (v.virtual === "cull") setCullOpen(true);
-    else if (v.virtual === "meet") setMeetView(true);
     else if (v.virtual === "aigaps") {
       commit({ ...data, aiLastVisit: Date.now() });
       setView({ name: "aigaps" });
@@ -1422,10 +1370,7 @@ function App() {
   };
   const openTaskCard = (t) => {
     if (t && t.virtual) openVirtual(t);
-    else {
-      setTaskView(deckKey);
-      setView({ name: "tasks" });
-    }
+    else setView({ name: "tasks" });
   };
   // ————— FVP: the dotted chain —————
   const dotTasks = (key, ids) => {
@@ -1487,7 +1432,7 @@ function App() {
     const day = new Date().toDateString();
     let changed = false;
     const next = { ...(data.rando || {}) };
-    ["work", "home"].forEach((key) => {
+    ["home"].forEach((key) => {
       if (randoFor(key)) return;
       const cur = next[key];
       if (cur && cur.day === day && cur.id === null) return; // nothing to pick today
@@ -1502,7 +1447,7 @@ function App() {
   }, [loaded, data, minuteTick]);
 
   // ————— the daily review —————
-  // at the appointed hour each day, an urgent task appears on the work deck
+  // at the appointed hour each day, an urgent task appears on the deck
   useEffect(() => {
     if (!loaded) return;
     const at = String(S.reviewAt || "").trim();
@@ -1512,16 +1457,16 @@ function App() {
     due.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
     if (Date.now() < due.getTime()) return;
     const stamp = "review:" + due.toDateString();
-    const work = data.tasks.work || [];
-    if (work.some((t) => t.daily === stamp)) return;
+    const home = data.tasks.home || [];
+    if (home.some((t) => t.daily === stamp)) return;
     // yesterday's untouched copy doesn't pile up
-    const kept = work.filter((t) => !(t.daily && String(t.daily).startsWith("review:") && t.state === "open"));
+    const kept = home.filter((t) => !(t.daily && String(t.daily).startsWith("review:") && t.state === "open"));
     const fresh = {
       ...newTaskObj(DAILY_REVIEW_TEXT, "urgent", "small", null, false),
       daily: stamp,
       created: due.getTime(),
     };
-    commit({ ...data, tasks: { ...data.tasks, work: [...kept, fresh] } });
+    commit({ ...data, tasks: { ...data.tasks, home: [...kept, fresh] } });
   }, [loaded, minuteTick, data, S.reviewAt]);
 
   useEffect(() => {
@@ -1552,17 +1497,16 @@ function App() {
   };
   const workOnGap = (g) => {
     const t = newTaskObj("AI gap: " + g.text, "important", "small", null, false);
-    const rest = ((data.top3 && data.top3.work) || []).filter((x) => x !== t.id);
+    const rest = ((data.top3 && data.top3.home) || []).filter((x) => x !== t.id);
     commit({
       ...data,
-      tasks: { ...data.tasks, work: [...(data.tasks.work || []), t] },
+      tasks: { ...data.tasks, home: [...(data.tasks.home || []), t] },
       aiGaps: (data.aiGaps || []).map((x) => (x.id === g.id ? { ...x, taskId: t.id } : x)),
-      top3: { ...data.top3, work: [t.id, ...rest].slice(0, 3) },
-      front: { ...data.front, work: t.id },
+      top3: { ...data.top3, home: [t.id, ...rest].slice(0, 3) },
+      front: { ...data.front, home: t.id },
     });
-    setTaskView("work");
     setView({ name: "tasks" });
-    ping("Front of the work deck");
+    ping("Front of the deck");
   };
   const snoozeAiGaps = () => {
     commit({ ...data, aiLastVisit: Date.now() });
@@ -1647,13 +1591,13 @@ function App() {
     if (!shareIn) return;
     setTasks(key, [...(data.tasks[key] || []), newTaskObj(shareIn, "normal", sizeForMind(mindNow), null, true)]);
     setShareIn(null);
-    ping(key === "work" ? "Added to work" : "Added to home");
+    ping("Added");
   };
   const addQuick = () => {
     const v = qaText.trim();
     if (!v) return;
     const when = qaImp === "important" && qaDate ? new Date(qaDate + "T09:00").getTime() : null;
-    setTasks(qaList, [...(data.tasks[qaList] || []), newTaskObj(v, qaImp, qaMind, when, false)]);
+    setTasks("home", [...(data.tasks.home || []), newTaskObj(v, qaImp, qaMind, when, false)]);
     setQaText("");
     setQaDate("");
     setQaOpen(false);
@@ -1775,7 +1719,6 @@ function App() {
     if (d !== data) commit(d);
     if (lastCheckin) {
       setActiveCheckin(lastCheckin.id);
-      setStackView(null);
       setView({ name: "state", state: lastCheckin.state });
     }
     if (acts.length) ping(acts.length === 1 ? "Noted from the widget" : acts.length + " widget entries folded in");
@@ -1808,116 +1751,6 @@ function App() {
     );
   const sweepFinished = (key) =>
     setTasks(key, (data.tasks[key] || []).filter((t) => t.state === "open"));
-
-  // ————— meetings: the roster —————
-  const startOfDay = (ts) => {
-    const d = new Date(ts);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  };
-  const meetingsDue = () => {
-    const day = 86400e3;
-    const today = startOfDay(now);
-    return (data.meetings || []).filter((m) => {
-      if (m.snoozeUntil && m.snoozeUntil > now) return false;
-      // anything on the books for today or later is handled
-      if (m.scheduledFor && startOfDay(m.scheduledFor) >= today) return false;
-      if (!m.lastMet) return true;
-      return now - m.lastMet >= (Number(m.cadenceDays) || 14) * day;
-    });
-  };
-  const snoozeMeeting = (id) => {
-    const tomorrow = startOfDay(now) + 86400e3;
-    setMeetings(
-      (data.meetings || []).map((x) => (x.id === id ? { ...x, snoozeUntil: tomorrow } : x))
-    );
-    ping("In progress — back tomorrow");
-  };
-  const overdueDays = (m) =>
-    m.lastMet ? Math.floor((now - m.lastMet) / 86400e3) - (Number(m.cadenceDays) || 14) : null;
-  const setMeetings = (list) => commit({ ...data, meetings: list });
-  const addMeeting = () => {
-    const nm = mtName.trim();
-    if (!nm) return;
-    setMeetings([
-      ...(data.meetings || []),
-      {
-        id: uid(),
-        name: nm,
-        cadenceDays: Number(mtCadence) || 14,
-        lastMet: null,
-        scheduledFor: null,
-        agenda: [],
-        created: Date.now(),
-      },
-    ]);
-    setMtName("");
-    setMtCadence("");
-    ping("On the roster");
-  };
-  const deleteMeeting = (id) => setMeetings((data.meetings || []).filter((m) => m.id !== id));
-  const metToday = (id) => {
-    const m = (data.meetings || []).find((x) => x.id === id);
-    const entry = m
-      ? { id: uid(), text: "Met w/ " + m.name, how: "done", list: "work", ts: Date.now() }
-      : null;
-    commit({
-      ...data,
-      meetings: (data.meetings || []).map((x) =>
-        x.id === id ? { ...x, lastMet: Date.now(), scheduledFor: null } : x
-      ),
-      taskLog: entry ? [entry, ...(data.taskLog || [])] : data.taskLog,
-    });
-    ping("Met — clock reset");
-  };
-  const scheduleMeeting = (id) => {
-    if (!schedDate) return;
-    const ts = new Date(schedDate + "T09:00").getTime();
-    setMeetings(
-      (data.meetings || []).map((x) => (x.id === id ? { ...x, scheduledFor: ts } : x))
-    );
-    setSchedFor(null);
-    ping("On the books");
-  };
-  const addAgenda = (id) => {
-    const v = (agInputs[id] || "").trim();
-    if (!v) return;
-    setMeetings(
-      (data.meetings || []).map((x) =>
-        x.id === id ? { ...x, agenda: [...(x.agenda || []), { id: uid(), text: v }] } : x
-      )
-    );
-    setAgInputs({ ...agInputs, [id]: "" });
-  };
-  const delAgenda = (id, aid) =>
-    setMeetings(
-      (data.meetings || []).map((x) =>
-        x.id === id ? { ...x, agenda: (x.agenda || []).filter((a) => a.id !== aid) } : x
-      )
-    );
-  const setLastMet = (id) => {
-    if (!lastMetDate) return;
-    const ts = new Date(lastMetDate + "T09:00").getTime();
-    if (isNaN(ts)) return;
-    setMeetings(
-      (data.meetings || []).map((x) => (x.id === id ? { ...x, lastMet: ts } : x))
-    );
-    setLastMetFor(null);
-    ping("Amended");
-  };
-  const saveMeetingEdit = (id) => {
-    const nm = editMeetName.trim();
-    if (!nm) return;
-    setMeetings(
-      (data.meetings || []).map((x) =>
-        x.id === id
-          ? { ...x, name: nm, cadenceDays: Number(editMeetCadence) || x.cadenceDays }
-          : x
-      )
-    );
-    setEditMeetId(null);
-    ping("Amended");
-  };
 
   // ————— derived —————
   const now = Date.now();
@@ -2142,13 +1975,10 @@ function App() {
       `**On record:** ${data.checkins.length} check-ins · ${data.workouts.length} sessions · ${data.dumps.length} notes`
     );
     lines.push("");
-    const openW = (data.tasks.work || []).filter((t) => t.state === "open");
     const openH = (data.tasks.home || []).filter((t) => t.state === "open");
-    if (openW.length || openH.length) {
-      lines.push("## Task lists");
-      const dump = (title, arr) => {
-        if (!arr.length) return;
-        lines.push(`### ${title}`);
+    if (openH.length) {
+      lines.push("## Task list");
+      const dump = (arr) => {
         arr.forEach((t) =>
           lines.push(
             `- ${effImp(t) === "urgent" ? "⚑ " : effImp(t) === "important" ? "◆ " : ""}${t.text}`
@@ -2156,8 +1986,7 @@ function App() {
         );
         lines.push("");
       };
-      dump("At work", openW);
-      dump("At home", openH);
+      dump(openH);
     }
     const byDay = new Map();
     timeline.forEach((e) => {
@@ -2352,7 +2181,6 @@ function App() {
   useEffect(() => {
     if (!loaded || !pendingAddRef.current) return;
     pendingAddRef.current = false;
-    setQaList(taskKeyNow);
     setQaMind(sizeForMind(mindNow));
     setQaImp("normal");
     setQaText("");
@@ -2401,7 +2229,7 @@ function App() {
       MM.snapshot(JSON.stringify(snap));
     } catch (e) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, minuteTick, loaded, taskView]);
+  }, [data, minuteTick, loaded]);
 
   if (!loaded) {
     return (
@@ -2517,11 +2345,11 @@ function App() {
     const chainN = which ? chainFor(activeKey, which).length : 0;
     const color = STATES[mind] ? STATES[mind].color : T.ww;
     const slotTag = (t) =>
-      t.slot === "meeting" ? "meeting" : t.slot === "rando" ? "rando" : effImp(t) === "urgent" ? "" : t.dot ? "●" : "";
+      t.slot === "rando" ? "rando" : effImp(t) === "urgent" ? "" : t.dot ? "●" : "";
     return (
       <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${color}` }}>
         <div className="flex items-center justify-between">
-          <p style={{ ...mono(10, color) }}>ON DECK · {activeKey === "work" ? "WORK" : "HOME"}</p>
+          <p style={{ ...mono(10, color) }}>ON DECK</p>
           {which && (
             <button onClick={() => startScan(activeKey, which)} style={{ ...mono(9, T.sub), background: "transparent" }}>
               ● {chainN} DOTTED{which === "big" ? " · BIG" : ""} · SCAN ▸
@@ -2560,10 +2388,7 @@ function App() {
             {front.virtual ? (
               <div>
                 <button onClick={() => openVirtual(front)} className="w-full py-2 mt-3" style={btnInk}>
-                  OPEN THE ROSTER
-                </button>
-                <button onClick={() => snoozeMeeting(front.id.slice(5))} className="w-full py-2 mt-2" style={btnFmOutline}>
-                  ↻ IN PROGRESS — BACK TOMORROW
+                  OPEN ▸
                 </button>
               </div>
             ) : editTaskId === front.id && editFrom === "deck" ? (
@@ -2950,7 +2775,7 @@ function App() {
           {!t ? (
             <div className="px-4 py-4" style={card}>
               <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
-                Nothing small on the {deckKey} list. Rest instead?
+                Nothing small on the list. Rest instead?
               </p>
               <button onClick={() => setBrk({ ...brk, step: "rest" })} className="w-full py-2 mt-3" style={btnInk}>
                 REST
@@ -3068,8 +2893,7 @@ function App() {
   const NopeView = () => {
     const current = data.checkins.find((c) => c.id === activeCheckin);
     const tried = current ? current.tried || [] : [];
-    const autoKey = isWorkHours(S) ? "work" : "off";
-    const activeKey = stackView || autoKey;
+    const activeKey = "off"; // the one stack
     const stack = data.stacks[activeKey] || [];
     // one item at a time: NEXT moves down the stack; at the bottom it turns back up
     const idx = Math.min(nopeIdx, Math.max(stack.length - 1, 0));
@@ -3104,43 +2928,11 @@ function App() {
         <div className="flex items-center justify-between mb-2">
           <Rubric>THE NOPE STACK</Rubric>
           <button
-            onClick={() => {
-              setEditStack(activeKey);
-              setView({ name: "stack" });
-            }}
+            onClick={() => setView({ name: "stack" })}
             style={{ ...mono(11, T.np), background: "transparent" }}
           >
             EDIT
           </button>
-        </div>
-        <div className="flex gap-2 mb-3">
-          {["work", "off"].map((k) => {
-            const on = activeKey === k;
-            return (
-              <button
-                key={k}
-                onClick={() => {
-                  setStackView(k);
-                  setNopeIdx(0);
-                  setNopeDir(1);
-                }}
-                className="px-3 py-1 transition"
-                style={{
-                  background: on ? T.ink : "transparent",
-                  color: on ? T.panel : T.sub,
-                  border: `1px solid ${on ? T.ink : T.lineSoft}`,
-                  borderRadius: 2,
-                  fontFamily: FONT.body,
-                  fontSize: 10,
-                  letterSpacing: "0.1em",
-                  fontWeight: 700,
-                }}
-              >
-                {STACK_META[k].label}
-                {k === autoKey ? " ◂" : ""}
-              </button>
-            );
-          })}
         </div>
         <div className="flex flex-col gap-2">
           {(stack.length ? [idx] : []).map((i) => {
@@ -3281,36 +3073,11 @@ function App() {
     <div>
       <BackLink label="← back to Nope" to={{ name: "state", state: "nope" }} />
       <p className="mb-1" style={{ fontFamily: FONT.disp, fontSize: 36, color: T.np }}>
-        The Stacks
+        The Nope Stack
       </p>
       <p className="mb-3" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.sub }}>
-        One stack for working hours (Mon–Fri, 4:30a–4:00p), one for home. Healthiest at the top,
-        last resort at the bottom. "Meditate" gets the timer; exercise items link to Training.
+        Healthiest at the top, last resort at the bottom. "Meditate" gets the timer; exercise items link to Training.
       </p>
-      <div className="flex gap-2 mb-3">
-        {["work", "off"].map((k) => {
-          const on = editStack === k;
-          return (
-            <button
-              key={k}
-              onClick={() => setEditStack(k)}
-              className="px-3 py-1 transition"
-              style={{
-                background: on ? T.ink : "transparent",
-                color: on ? T.panel : T.sub,
-                border: `1px solid ${on ? T.ink : T.lineSoft}`,
-                borderRadius: 2,
-                fontFamily: FONT.body,
-                fontSize: 10,
-                letterSpacing: "0.1em",
-                fontWeight: 700,
-              }}
-            >
-              {STACK_META[k].label}
-            </button>
-          );
-        })}
-      </div>
       <div className="flex flex-col gap-2">
         {(data.stacks[editStack] || []).map((item, i) => (
           <div key={i} className="flex items-center gap-2 px-3 py-2" style={card}>
@@ -3351,197 +3118,8 @@ function App() {
     </div>
   );
 
-  const MeetingsView = () => {
-    const ms = data.meetings || [];
-    const due = meetingsDue();
-    const dueIds = new Set(due.map((m) => m.id));
-    const sorted = [...ms].sort(
-      (a, b) => (dueIds.has(b.id) ? 1 : 0) - (dueIds.has(a.id) ? 1 : 0)
-    );
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <Rubric>THE MEETING ROSTER</Rubric>
-          <button onClick={() => setMeetView(false)} style={{ ...mono(10, T.ww), background: "transparent" }}>
-            ← TASKS
-          </button>
-        </div>
-        <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
-          Who you meet, how often, and what's waiting to be said. When someone slips past their
-          cadence, a "set up meeting" task rises onto the work deck by itself.
-        </p>
-        <div className="flex flex-col gap-2">
-          {ms.length === 0 && (
-            <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13, color: T.sub }}>
-              The roster is empty. Add the first person below.
-            </p>
-          )}
-          {sorted.map((m) => {
-            const isDue = dueIds.has(m.id);
-            const od = overdueDays(m);
-            const isEd = editMeetId === m.id;
-            const schedOpen = schedFor === m.id;
-            const scheduledFuture = m.scheduledFor && startOfDay(m.scheduledFor) >= startOfDay(now);
-            const scheduledPassed = m.scheduledFor && startOfDay(m.scheduledFor) < startOfDay(now);
-            return (
-              <div
-                key={m.id}
-                className="px-4 py-3"
-                style={{ ...card, borderLeft: `4px solid ${isDue ? T.np : scheduledFuture ? T.ww : T.lineSoft}` }}
-              >
-                <div className="flex items-center gap-2">
-                  {isEd ? (
-                    <>
-                      <input value={editMeetName} onChange={(e) => setEditMeetName(e.target.value)} className="flex-1 px-2 py-1" style={inputS13} />
-                      <input value={editMeetCadence} onChange={(e) => setEditMeetCadence(e.target.value)} inputMode="numeric" className="px-2 py-1" style={{ ...inputS13, width: 52, textAlign: "right" }} />
-                      <span style={{ ...mono(9) }}>D</span>
-                      <button onClick={() => saveMeetingEdit(m.id)} className="shrink-0" style={{ ...mono(9, T.ww), background: "transparent" }}>
-                        SAVE
-                      </button>
-                      <button onClick={() => setEditMeetId(null)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
-                        ✕
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: 700, color: T.ink }}>
-                        {m.name}
-                        <span style={{ color: T.sub, fontWeight: 400, fontSize: 11 }}> · every {m.cadenceDays}d</span>
-                      </span>
-                      <button
-                        onClick={() => {
-                          setEditMeetId(m.id);
-                          setEditMeetName(m.name);
-                          setEditMeetCadence(String(m.cadenceDays));
-                        }}
-                        className="shrink-0"
-                        style={{ ...mono(11, T.rubric), background: "transparent" }}
-                      >
-                        ✎
-                      </button>
-                      <button onClick={() => deleteMeeting(m.id)} className="shrink-0" style={{ ...mono(11), background: "transparent" }}>
-                        ✕
-                      </button>
-                    </>
-                  )}
-                </div>
-                <p
-                  className="mt-1"
-                  onClick={() => {
-                    setLastMetFor(lastMetFor === m.id ? null : m.id);
-                    setLastMetDate(m.lastMet ? toLocalInput(m.lastMet).slice(0, 10) : "");
-                  }}
-                  style={{ fontFamily: FONT.body, fontSize: 11.5, color: isDue ? T.np : T.sub, cursor: "pointer" }}
-                >
-                  {m.snoozeUntil && m.snoozeUntil > now
-                    ? "In progress — back tomorrow"
-                    : scheduledFuture
-                    ? `Scheduled for ${fmtDay(m.scheduledFor)}`
-                    : scheduledPassed
-                    ? `Was scheduled ${fmtDay(m.scheduledFor)} — did it happen?`
-                    : m.lastMet
-                    ? `Met ${fmtDay(m.lastMet)}${od > 0 ? ` · ${od}d past cadence` : ""}`
-                    : "Never met — due now"}
-                  <span style={{ color: T.rubric }}> ✎</span>
-                </p>
-                {lastMetFor === m.id && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <label style={{ ...mono(9) }}>LAST MET</label>
-                    <input
-                      type="date"
-                      value={lastMetDate}
-                      onChange={(e) => setLastMetDate(e.target.value)}
-                      className="flex-1 px-2 py-1"
-                      style={inputS13}
-                    />
-                    <button onClick={() => setLastMet(m.id)} className="px-3 py-2 shrink-0" style={btnInk}>
-                      SET
-                    </button>
-                    <button onClick={() => setLastMetFor(null)} className="shrink-0" style={{ ...mono(9), background: "transparent" }}>
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {(m.agenda || []).length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    {m.agenda.map((a) => (
-                      <div key={a.id} className="flex items-center gap-2">
-                        <span style={{ color: T.fm, fontSize: 11 }}>▸</span>
-                        <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 12.5, color: T.ink }}>
-                          {a.text}
-                        </span>
-                        <button onClick={() => delAgenda(m.id, a.id)} className="shrink-0" style={{ ...mono(10), background: "transparent" }}>
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2 mt-2">
-                  <input
-                    value={agInputs[m.id] || ""}
-                    onChange={(e) => setAgInputs({ ...agInputs, [m.id]: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addAgenda(m.id);
-                    }}
-                    placeholder="Add to the agenda…"
-                    className="flex-1 px-2 py-1"
-                    style={inputS13}
-                  />
-                  <button onClick={() => addAgenda(m.id)} className="px-3 shrink-0" style={{ ...mono(10, T.ink), background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2 }}>
-                    +
-                  </button>
-                </div>
-                <div className="flex gap-2 mt-2 items-center">
-                  <button onClick={() => metToday(m.id)} className="flex-1 py-2" style={btnWwOutline}>
-                    MET ✓
-                  </button>
-                  {isDue && (
-                    <button onClick={() => snoozeMeeting(m.id)} className="px-3 py-2 shrink-0" style={btnGhost}>
-                      ↻ TOMORROW
-                    </button>
-                  )}
-                  {schedOpen ? (
-                    <>
-                      <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} className="flex-1 px-2 py-1" style={inputS13} />
-                      <button onClick={() => scheduleMeeting(m.id)} className="px-3 py-2 shrink-0" style={btnInk}>
-                        SET
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setSchedFor(m.id);
-                        setSchedDate("");
-                      }}
-                      className="flex-1 py-2"
-                      style={btnFmOutline}
-                    >
-                      SCHEDULED…
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex gap-2 mt-3">
-          <input value={mtName} onChange={(e) => setMtName(e.target.value)} placeholder="Name…" className="flex-1 px-3 py-2" style={inputS14} />
-          <input value={mtCadence} onChange={(e) => setMtCadence(e.target.value)} inputMode="numeric" placeholder="days" className="px-2 py-2" style={{ ...inputS14, width: 64, textAlign: "right" }} />
-          <button onClick={addMeeting} className="px-4 shrink-0" style={{ ...mono(11, T.ink), background: T.panel, border: `1px solid ${T.line}`, borderRadius: 2 }}>
-            ADD
-          </button>
-        </div>
-        <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          Cadence is in days — "every 14" raises them two weeks after you last met. MET resets the
-          clock and inscribes it in the Chronicle; SCHEDULED quiets the task until the date passes.
-        </p>
-      </div>
-    );
-  };
-
   const TasksView = () => {
-    const activeKey = taskView || taskKeyNow;
+    const activeKey = taskKeyNow;
     const list = data.tasks[activeKey] || [];
     const open = list.filter((t) => t.state === "open");
     const deck = deckFor(activeKey, mindNow);
@@ -3551,29 +3129,10 @@ function App() {
     const unsortedList = open.filter((t) => t.unsorted);
     const importants = open.filter((t) => effImp(t) === "important");
     const overCap = importants.length - (Number(S.impCap) || 30);
-    if (meetView) return MeetingsView();
     return (
       <div>
         <div className="flex items-center justify-between mb-2">
           <Rubric>THE TASK LIST</Rubric>
-          <button onClick={() => setMeetView(true)} style={{ ...mono(10, T.ww), background: "transparent" }}>
-            MEETINGS{meetingsDue().length ? ` (${meetingsDue().length})` : ""} →
-          </button>
-        </div>
-        <div className="flex gap-2 mb-3">
-          {["work", "home"].map((k) => {
-            const on = activeKey === k;
-            const nOpen = (data.tasks[k] || []).filter((t) => t.state === "open").length;
-            const nUrg = (data.tasks[k] || []).filter(
-              (t) => t.state === "open" && effImp(t) === "urgent"
-            ).length;
-            return (
-              <button key={k} onClick={() => setTaskView(k)} className="px-3 py-1 transition" style={chip(on)}>
-                {k === "work" ? "AT WORK" : "AT HOME"} ({nOpen}){nUrg > 0 ? " ⚑" + nUrg : ""}
-                {k === taskKeyNow ? " ◂" : ""}
-              </button>
-            );
-          })}
         </div>
 
         {cullOpen ? (
@@ -3882,8 +3441,8 @@ function App() {
         )}
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
           How it works: ⚑ urgents always come first. Full Mind deals the next three from your FVP
-          chain (● dotted important small tasks, worked from the bottom up), plus a meeting to set up
-          and one random normal task for the day. Wu Wei shows two Big tasks. Nope shows only urgents.
+          chain (● dotted important small tasks, worked from the bottom up), plus one random normal
+          task for the day. Wu Wei shows two Big tasks. Nope shows only urgents.
           Tap a task here to dot or un-dot it; tap a ✓ task to reopen it.
         </p>
         </>)}
@@ -4329,7 +3888,7 @@ function App() {
                 <span style={{ fontFamily: FONT.body, fontSize: 12, color: T.rubric }}>☾</span>
                 <span className="flex-1" style={{ fontFamily: FONT.body, fontSize: 13.5, color: T.ink }}>{k}</span>
                 <span style={{ ...mono(10), letterSpacing: 0 }}>
-                  ×{x.n} · back to work {x.back}
+                  ×{x.n} · back to it {x.back}
                 </span>
               </div>
             ))}
@@ -4415,7 +3974,7 @@ function App() {
                         <span style={{ fontWeight: 600 }}>{e.text}</span>
                         <span style={{ color: T.sub, fontSize: 11.5 }}>
                           {" "}
-                          · {e.how === "done" ? "done" : e.how === "door" ? "two-minute door" : "progressed"} · {e.list}
+                          · {e.how === "done" ? "done" : e.how === "door" ? "two-minute door" : "progressed"}
                         </span>
                       </span>
                     )}
@@ -4682,7 +4241,7 @@ function App() {
     const solved = list.filter((g) => g.solved);
     const statusOf = (g) => {
       if (!g.taskId) return null;
-      const t = (data.tasks.work || []).find((x) => x.id === g.taskId);
+      const t = (data.tasks.home || []).find((x) => x.id === g.taskId);
       if (!t) return null;
       return t.state === "open" ? "on the deck" : t.state === "done" ? "worked" : "re-entered";
     };
@@ -4769,8 +4328,8 @@ function App() {
           <span style={{ ...mono(9) }}>{live.length} OPEN</span>
         </div>
         <p className="mb-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
-          What you want AI to do for you at work and it cannot do yet. Any one of them can become
-          the next task on the work deck. Mark it solved when the gap closes — the list turns into
+          What you want AI to do for you and it cannot do yet. Any one of them can become
+          the next task on the deck. Mark it solved when the gap closes — the list turns into
           a record of what changed.
         </p>
         <div className="flex gap-2 mb-3">
@@ -4855,8 +4414,6 @@ function App() {
         <BackLink label="← back" to={{ name: "more" }} />
         <Rubric className="mb-2">SETTINGS</Rubric>
         <div className="flex flex-col gap-2">
-          {row("WORK STARTS (M–F)", "workStart", "time")}
-          {row("WORK ENDS", "workEnd", "time")}
           {row("NOPE AFTER (HOURS)", "nopeHours")}
           {row("OTF TARGET / WEEK", "otfTarget")}
           {row("OTF TREAD MILES", "otfMiles")}
@@ -4896,8 +4453,7 @@ function App() {
           )}
         </div>
         <p className="mt-3" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11, color: T.sub, lineHeight: 1.5 }}>
-          These feed the clock rules, the deck, and the training nudges throughout the book. Work
-          hours decide which task list and nope stack the day belongs to.
+          These feed the clock rules, the deck, and the training nudges throughout the book.
         </p>
       </div>
     );
@@ -5001,18 +4557,11 @@ function App() {
             </p>
             <div className="flex gap-2 mt-2">
               <button
-                onClick={() => addSharedTask("work")}
+                onClick={() => addSharedTask("home")}
                 className="flex-1 py-2"
                 style={{ background: T.ink, color: T.panel, border: `1px solid ${T.ink}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
               >
-                → WORK LIST
-              </button>
-              <button
-                onClick={() => addSharedTask("home")}
-                className="flex-1 py-2"
-                style={{ background: "transparent", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 2, fontFamily: FONT.body, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}
-              >
-                → HOME LIST
+                → ADD TO THE LIST
               </button>
             </div>
             <button
@@ -5338,12 +4887,6 @@ function App() {
               style={inputS14}
             />
             <div className="flex gap-2 mt-2">
-              {["work", "home"].map((k) => (
-                <button key={k} onClick={() => setQaList(k)} className="px-2 py-1" style={chip(qaList === k)}>
-                  {k === "work" ? "WORK" : "HOME"}
-                </button>
-              ))}
-              <span style={{ width: 6 }} />
               {["normal", "important", "urgent"].map((v) => (
                 <button
                   key={v}
@@ -5391,7 +4934,6 @@ function App() {
       {!medOpen && !qaOpen && !scan && (
         <button
           onClick={() => {
-            setQaList(taskKeyNow);
             setQaMind(sizeForMind(mindNow));
             setQaImp("normal");
             setQaOpen(true);
