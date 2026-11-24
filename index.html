@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261122-181315 -->
+<!-- build 20261124-051542 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -133,6 +133,21 @@ const STATES = {
     color: T.np,
   },
 };
+
+// ————— revealing the path —————
+// One screen, one step at a time. It always opens at the top; "too big a lift"
+// steps down, finishing something offers a step back up. The step you act on
+// is the state the book logs — no check-in questions.
+const PATH = [
+  { key: "wuwei", state: "wuwei", name: "Wu Wei", tag: "the big work", color: T.ww,
+    line: "Start here. If it pulls you in, stay with it." },
+  { key: "fullmind", state: "fullmind", name: "Full Mind", tag: "something you can throw yourself into", color: T.fm,
+    line: "Something well defined. Throw yourself in and let the task pull you up." },
+  { key: "simple", state: "nope", name: "Something Simple", tag: "a small way back in", color: T.rubric,
+    line: "Meditation is your most reliable way in." },
+  { key: "stack", state: "nope", name: "The Nope Stack", tag: "rest, still facing toward", color: T.np,
+    line: "Rest still faces toward. A nap, a book, or a good game beats turning away." },
+];
 
 const DEFAULT_SETTINGS = {
   nopeHours: 5,
@@ -506,10 +521,19 @@ function App() {
 
   const [nopeIdx, setNopeIdx] = useState(0); // which Nope stack item is showing
   const [nopeDir, setNopeDir] = useState(1); // 1 = going down the stack, -1 = going back up
+  const skipNopeResetRef = useRef(false); // a check-in logged by the path keeps the stack where it is
   useEffect(() => {
+    if (skipNopeResetRef.current) {
+      skipNopeResetRef.current = false;
+      return;
+    }
     setNopeIdx(0);
     setNopeDir(1);
   }, [activeCheckin]); // every new Nope check-in starts at Meditate
+  const [pathLevel, setPathLevel] = useState(0); // 0 Wu Wei · 1 Full Mind · 2 something simple · 3 the Nope stack
+  const [pathAsk, setPathAsk] = useState(false); // "too big a lift": offering two minutes first
+  const [pathClimb, setPathClimb] = useState(false); // something got done: offer a step up
+  const [pathState, setPathState] = useState(null); // state to log once the current change has saved
   const editStack = "off"; // the one Nope stack (stored under its old "home" key)
 
   // meditation timer
@@ -630,8 +654,7 @@ function App() {
                 if (cs.length) {
                   const timedOut =
                     Date.now() - cs[0].ts > (Number(st.nopeHours) || 5) * 3600e3;
-                  setActiveCheckin(cs[0].id);
-                  setView({ name: "state", state: timedOut ? "nope" : cs[0].state });
+                  setActiveCheckin(cs[0].id); // the book opens on the path, at the top
                 }
               }
             } catch (e2) {}
@@ -666,6 +689,12 @@ function App() {
       else if (document.visibilityState === "visible") {
         const t = hiddenAtRef.current;
         if (t && Date.now() - t > GAP_MIN_MS) noteGap(t);
+        // back after a while: the path starts at the top again
+        if (t && Date.now() - t > 10 * 60e3) {
+          setPathLevel(0);
+          setPathAsk(false);
+          setPathClimb(false);
+        }
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -861,6 +890,49 @@ function App() {
       taskLog: [{ id: uid(), text: taskText, how: "door", list: deckKey, ts: Date.now() }, ...(data.taskLog || [])],
     });
     startMeditation(120, null);
+  };
+
+  // ————— the path: moving between steps —————
+  const pathStepDown = () => {
+    setPathAsk(false);
+    setPathClimb(false);
+    const n = Math.min(3, pathLevel + 1);
+    if (n === 3) {
+      const st = data.stacks.off || [];
+      // "Something simple" already offered the timer, so the stack starts below Meditate
+      setNopeIdx(st.length > 1 && /medit/i.test(st[0]) ? 1 : 0);
+      setNopeDir(1);
+    }
+    setPathLevel(n);
+  };
+  const pathStepUp = () => {
+    setPathAsk(false);
+    setPathClimb(false);
+    setPathLevel(Math.max(0, pathLevel - 1));
+  };
+  // acting on a step: log that step's state (in one save, so nothing is overwritten)
+  const pathTry = (item, st) => {
+    const live = currentState && !currentState.timedOut && mindNow === st;
+    if (live) return markTried(item);
+    const c = { id: uid(), state: st, ts: Date.now(), tried: [item], via: "path" };
+    skipNopeResetRef.current = true;
+    commit({ ...data, checkins: [c, ...data.checkins] });
+    setActiveCheckin(c.id);
+  };
+  const pathMeditate = (sec, item = "Meditate") => {
+    pathTry(item, "nope");
+    startMeditation(sec, null);
+    setMedOrigin("path");
+  };
+  const pathDoor = (text) => {
+    startDoor(text);
+    setMedOrigin("path");
+    setPathState(PATH[pathLevel].state);
+    setPathAsk(false);
+  };
+  const pathOnAct = (how) => {
+    setPathState(PATH[pathLevel].state);
+    if (how === "done" && pathLevel > 0) setPathClimb(true);
   };
 
   // ————— the gap interview —————
@@ -2131,11 +2203,18 @@ function App() {
   const NavBtn = ({ id, label }) => {
     const active =
       view.name === id ||
-      (id === "now" && (view.name === "state" || view.name === "stack" || view.name === "break")) ||
+      (id === "now" && ["state", "stack", "break", "checkin"].includes(view.name)) ||
       (id === "more" && ["more", "train", "log", "settings", "aigaps"].includes(view.name));
     return (
       <button
-        onClick={() => setView({ name: id })}
+        onClick={() => {
+          if (id === "now") {
+            setPathLevel(0);
+            setPathAsk(false);
+            setPathClimb(false);
+          }
+          setView({ name: id });
+        }}
         className="flex-1 py-4 uppercase transition"
         style={{
           ...mono(11, active ? T.ink : T.sub),
@@ -2157,6 +2236,19 @@ function App() {
       {label}
     </button>
   );
+
+  // the path logs the step you acted on, once the task change has saved
+  useEffect(() => {
+    if (!loaded || !pathState) return;
+    const st = pathState;
+    setPathState(null);
+    if (currentState && !currentState.timedOut && mindNow === st) return;
+    const c = { id: uid(), state: st, ts: Date.now(), tried: [], via: "path" };
+    skipNopeResetRef.current = true;
+    commit({ ...data, checkins: [c, ...data.checkins] });
+    setActiveCheckin(c.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathState, data, loaded]);
 
   // when the chain runs dry, the scan opens by itself
   useEffect(() => {
@@ -2338,7 +2430,7 @@ function App() {
   );
 
   // ————— the deck, drawn the same way on every screen —————
-  const DeckPanel = (activeKey, mind) => {
+  const DeckPanel = (activeKey, mind, onAct) => {
     const deck = deckFor(activeKey, mind);
     const front = deck[0] || null;
     const which = scanWhich(activeKey, mind);
@@ -2395,13 +2487,13 @@ function App() {
               TaskEditorFor(activeKey)
             ) : (
               <div className="flex gap-2 mt-3 items-center">
-                <button onClick={() => resolveTask(activeKey, front.id, "later")} className="flex-1 py-2" style={btnFmOutline}>
+                <button onClick={() => { resolveTask(activeKey, front.id, "later"); if (onAct) onAct("later"); }} className="flex-1 py-2" style={btnFmOutline}>
                   ↻ LATER
                 </button>
-                <button onClick={() => keepOnDeck(activeKey, front.id, mind)} className="flex-1 py-2" style={btnWwOutline}>
+                <button onClick={() => { keepOnDeck(activeKey, front.id, mind); if (onAct) onAct("keep"); }} className="flex-1 py-2" style={btnWwOutline}>
                   KEEP ON DECK
                 </button>
-                <button onClick={() => resolveTask(activeKey, front.id, "done")} className="px-3 py-2 shrink-0" style={btnWw}>
+                <button onClick={() => { resolveTask(activeKey, front.id, "done"); if (onAct) onAct("done"); }} className="px-3 py-2 shrink-0" style={btnWw}>
                   DONE ✓
                 </button>
               </div>
@@ -2445,6 +2537,7 @@ function App() {
   // ————— views —————
   const NowView = () => (
     <div>
+      <BackLink label="← the path" />
       {currentState ? (
         <div
           className="px-4 py-3 mb-4 flex items-center gap-3"
@@ -2517,6 +2610,224 @@ function App() {
       </p>
     </div>
   );
+
+  // ————— revealing the path: the Now screen —————
+  const PathView = () => {
+    const P = PATH[pathLevel];
+    const hr = new Date().getHours();
+    const line =
+      pathLevel === 0 && hr >= 4 && hr < 10
+        ? "Rested and early — this is often your Wu Wei window. Begin with the biggest thing."
+        : P.line;
+    const urgentDeck = deckFor(deckKey, "nope");
+    const front = pathLevel <= 1 ? workTask(deckKey, P.state) : null;
+    const current = data.checkins.find((c) => c.id === activeCheckin);
+    const tried = current ? current.tried || [] : [];
+    // step iii: one small thing
+    const tinyPool = freeOf(deckKey).filter((t) => sizeOf(t) === "small" && effImp(t) !== "urgent");
+    const tiny = randoFor(deckKey) || tinyPool.find((t) => effImp(t) === "normal") || tinyPool[0] || null;
+    // step iv: the stack, one item at a time
+    const stack = data.stacks.off || [];
+    const sIdx = Math.min(nopeIdx, Math.max(stack.length - 1, 0));
+    const sItem = stack[sIdx];
+    const advance = () => {
+      if (stack.length < 2) return;
+      let next = sIdx;
+      let dir = nopeDir;
+      if (dir === 1) {
+        if (sIdx < stack.length - 1) next = sIdx + 1;
+        else {
+          dir = -1;
+          next = sIdx - 1;
+        }
+      } else if (sIdx > 0) next = sIdx - 1;
+      else {
+        dir = 1;
+        next = sIdx + 1;
+      }
+      setNopeIdx(next);
+      setNopeDir(dir);
+      setPathClimb(false);
+    };
+    const tooBig = () => {
+      if (!pathAsk && front && !front.virtual) setPathAsk(true);
+      else pathStepDown();
+    };
+    return (
+      <div>
+        <p className="mb-3 text-center" style={{ ...mono(11) }}>
+          — REVEALING THE PATH —
+        </p>
+        <div className="flex items-center gap-1 mb-1">
+          {PATH.map((x, i) => (
+            <span key={x.key} style={{ opacity: i === pathLevel ? 1 : 0.3 }}>
+              <Blaze color={x.color} size={i === pathLevel ? 14 : 10} />
+            </span>
+          ))}
+          <span style={{ ...mono(9), marginLeft: 6 }}>STEP {toRoman(pathLevel + 1).toUpperCase()} OF IV</span>
+        </div>
+        <div style={{ fontFamily: FONT.disp, fontSize: 42, color: P.color, lineHeight: 1.05 }}>{P.name}</div>
+        <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>{P.tag}</p>
+        <div className="px-4 py-3 mt-3 mb-4" style={{ ...card, borderLeft: `4px solid ${P.color}` }}>
+          <p style={{ fontFamily: FONT.body, fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>{line}</p>
+        </div>
+
+        {pathClimb && pathLevel > 0 && (
+          <div className="px-4 py-3 mb-4" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+            <p style={{ ...mono(10, T.ww) }}>THAT'S DONE</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
+              Want to try a step up — {PATH[pathLevel - 1].name}?
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button onClick={pathStepUp} className="flex-1 py-2" style={{ ...btnInk, background: T.ww }}>
+                ▲ A STEP UP
+              </button>
+              <button onClick={() => setPathClimb(false)} className="flex-1 py-2" style={btnGhost}>
+                STAY HERE
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pathLevel <= 1 && DeckPanel(deckKey, P.state, pathOnAct)}
+        {pathLevel >= 2 && urgentDeck.length > 0 && DeckPanel(deckKey, "nope", pathOnAct)}
+
+        {pathLevel === 2 && (
+          <div className="flex flex-col gap-3">
+            <div className="px-4 py-4" style={{ ...card, borderLeft: `4px solid ${T.ww}` }}>
+              <span style={{ fontFamily: FONT.body, fontSize: 17, fontWeight: 600, color: T.ink }}>Meditate</span>
+              <div className="flex gap-2 mt-3" style={{ flexWrap: "wrap" }}>
+                {MED_OPTIONS.map((o) => (
+                  <button key={o.label} onClick={() => pathMeditate(o.sec)} className="px-3 py-2" style={btnWwOutline}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {tiny && (
+              <div className="px-4 py-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+                <p style={{ ...mono(9) }}>OR ONE SMALL THING</p>
+                <div className="flex items-start gap-2 mt-1">
+                  <span className="shrink-0 mt-1">{tierGlyph(tiny)}</span>
+                  <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 15.5, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
+                    {tiny.text}
+                  </p>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => pathDoor(tiny.text)} className="flex-1 py-2" style={btnFmOutline}>
+                    TWO MINUTES
+                  </button>
+                  <button
+                    onClick={() => {
+                      resolveTask(deckKey, tiny.id, "done");
+                      pathOnAct("done");
+                    }}
+                    className="flex-1 py-2"
+                    style={btnWw}
+                  >
+                    DONE ✓
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {pathLevel === 3 && sItem && (() => {
+          const done = tried.includes(sItem);
+          const isMed = /medit/i.test(sItem);
+          const isMove = !isMed && /exercis|miles|\brun\b|otf/i.test(sItem);
+          return (
+            <div className="px-4 py-4" style={{ ...card, borderLeft: `4px solid ${T.np}`, opacity: done ? 0.65 : 1 }}>
+              <div className="flex items-center gap-3">
+                <span style={{ ...mono(12, done ? T.sub : T.np), width: 38, letterSpacing: 0 }}>
+                  {done ? "✓" : `${toRoman(sIdx + 1)}.`}
+                </span>
+                <span style={{ fontFamily: FONT.body, fontSize: 17, fontWeight: 600, color: T.ink }}>{sItem}</span>
+              </div>
+              {isMed ? (
+                <div className="flex gap-2 mt-3" style={{ flexWrap: "wrap" }}>
+                  {MED_OPTIONS.map((o) => (
+                    <button key={o.label} onClick={() => pathMeditate(o.sec, sItem)} className="px-3 py-2" style={btnWwOutline}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              ) : isMove ? (
+                <button
+                  onClick={() => {
+                    pathTry(sItem, "nope");
+                    setView({ name: "train" });
+                  }}
+                  className="w-full py-2 mt-3"
+                  style={btnWwOutline}
+                >
+                  TO TRAINING →
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (done) return;
+                    pathTry(sItem, "nope");
+                    setPathClimb(true);
+                  }}
+                  className="w-full py-2 mt-3"
+                  style={done ? btnGhost : btnInk}
+                >
+                  {done ? "DOING IT ✓" : "I'LL DO THIS"}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+        {pathLevel === 3 && stack.length > 1 && (
+          <button onClick={advance} className="w-full py-3 mt-2" style={btnGhost}>
+            NEXT ▸
+          </button>
+        )}
+
+        {pathAsk && front && pathLevel <= 1 && (
+          <div className="px-4 py-3 mt-3" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
+            <p style={{ ...mono(10, T.fm) }}>BEFORE YOU STEP DOWN</p>
+            <p className="mt-1" style={{ fontFamily: FONT.body, fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
+              Two minutes on <span style={{ fontWeight: 700 }}>{front.text}</span>? Starting is often the whole
+              lift. If it still won't move, step down — no harm done.
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => pathDoor(front.text)} className="flex-1 py-2" style={btnInk}>
+                TRY TWO MINUTES
+              </button>
+              <button onClick={pathStepDown} className="flex-1 py-2" style={btnGhost}>
+                STEP DOWN ▾
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pathLevel < 3 && !pathAsk && (
+          <button onClick={tooBig} className="w-full py-3 mt-5" style={{ ...btnGhost, fontSize: 11.5 }}>
+            {pathLevel === 2 ? "STILL TOO MUCH ▾" : "SEEMS LIKE TOO BIG A LIFT ▾"}
+          </button>
+        )}
+        {pathLevel > 0 && !pathClimb && (
+          <button onClick={pathStepUp} className="w-full py-2 mt-2" style={{ ...mono(10, T.ww), background: "transparent" }}>
+            ▲ A STEP BACK UP
+          </button>
+        )}
+
+        <div className="mt-6">{DoneForNowBtn()}</div>
+        <div className="flex flex-col gap-2 mt-5">
+          <button onClick={() => setView({ name: "checkin" })} style={{ ...mono(9), background: "transparent", textAlign: "left" }}>
+            THE OLD CHECK-IN ▸
+          </button>
+          <span style={{ ...mono(9) }}>
+            THIS DAY · {todayCheckins.length} {todayCheckins.length === 1 ? "ENTRY" : "ENTRIES"}
+            {todayMiles > 0 ? ` · ${todayMiles.toFixed(1)} MI` : ""}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   // ————— signal: what the book asks at the moment of a check-in —————
   const SignalCard = () => {
@@ -4421,16 +4732,6 @@ function App() {
           {row("MILES FLOOR / 14 DAYS", "mileFloor")}
           {row("DAILY REVIEW AT", "reviewAt", "time")}
           {row("AI LIST EVERY (DAYS)", "aiEvery")}
-          <button
-            onClick={() => setSetting("autoOpen", S.autoOpen === false ? true : false)}
-            className="flex items-center justify-between px-4 py-3 w-full"
-            style={card}
-          >
-            <span style={{ ...mono(10) }}>OPEN INTO CURRENT STATE</span>
-            <span style={{ ...mono(10, S.autoOpen === false ? T.sub : T.ww) }}>
-              {S.autoOpen === false ? "OFF" : "ON"}
-            </span>
-          </button>
           {MM && (
             <button
               onClick={() => {
@@ -4655,7 +4956,8 @@ function App() {
           </div>
         )}
 
-        {view.name === "now" && NowView()}
+        {view.name === "now" && PathView()}
+        {view.name === "checkin" && NowView()}
         {view.name === "tasks" && TasksView()}
         {view.name === "state" && view.state === "wuwei" && WuWeiView()}
         {view.name === "state" && view.state === "fullmind" && FullMindView()}
@@ -4749,6 +5051,50 @@ function App() {
               >
                 END EARLY
               </button>
+            </div>
+          ) : medOrigin === "path" ? (
+            <div className="flex flex-col items-center w-full" style={{ maxWidth: 320 }}>
+              <p className="mt-6 text-center" style={{ ...mono(11, T.ww) }}>
+                TIME'S UP · HOW IS IT NOW?
+              </p>
+              <div className="flex gap-2 mt-3 w-full">
+                {pathLevel > 0 && (
+                  <button
+                    onClick={() => {
+                      closeMeditation();
+                      pathStepUp();
+                      setView({ name: "now" });
+                    }}
+                    className="flex-1 py-3"
+                    style={{ ...btnInk, background: T.ww }}
+                  >
+                    ▲ A STEP UP
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    closeMeditation();
+                    setView({ name: "now" });
+                  }}
+                  className="flex-1 py-3"
+                  style={btnInk}
+                >
+                  {medDoor ? "KEEP GOING" : "BACK TO THE PATH"}
+                </button>
+              </div>
+              {medDoor && pathLevel < 3 && (
+                <button
+                  onClick={() => {
+                    closeMeditation();
+                    pathStepDown();
+                    setView({ name: "now" });
+                  }}
+                  className="w-full py-3 mt-2"
+                  style={btnGhost}
+                >
+                  STILL TOO BIG ▾
+                </button>
+              )}
             </div>
           ) : medOrigin === "break" ? (
             <div className="flex flex-col items-center w-full" style={{ maxWidth: 320 }}>
