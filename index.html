@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261124-051542 -->
+<!-- build 20261124-054229 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -271,6 +271,30 @@ const SIZES = {
 };
 const sizeOf = (t) => (t && t.size) || (t && t.mind === "wuwei" ? "big" : "small");
 const sizeForMind = (mind) => (mind === "wuwei" ? "big" : "small");
+
+// ————— where a task fits, read from its words (not from how it was filed) —————
+//   wuwei    · plan, design, write, research, figure out…
+//   fullmind · call, email, pay, fix, book, send…
+//   simple   · read, watch, listen — media, links
+const URL_RE = /(https?:\/\/[^\s]+)/i;
+const FIT_SIMPLE_VERB = /^\s*(read|re-read|reread|listen|watch|look at|skim|browse|check out|view)\b/i;
+const FIT_WUWEI = /\b(plan|planning|design|strategy|strategi[sz]e|think through|think about|figure out|research|outline|draft|write|vision|architect|decide|brainstorm|rethink|map out|roadmap|learn|build|create|prototype)\b/i;
+const FIT_FULL = /\b(call|phone|email|e-mail|text|message|schedule|book|pay|buy|order|fix|repair|send|reply|respond|fill|sign|file|clean|tidy|return|cancel|renew|update|submit|pick up|drop off|ask|set up|install|organi[sz]e|sort|move|wash|mow|do)\b/i;
+const FIT_MEDIA = /\b(podcast|video|article|youtube|episode|newsletter|essay|book|paper|talk|lecture|documentary)\b/i;
+const fitOf = (t) => {
+  const raw = (t && t.text) || "";
+  const x = raw.replace(URL_RE, " ");
+  if (FIT_SIMPLE_VERB.test(x)) return "simple";
+  if (FIT_WUWEI.test(x)) return "wuwei";
+  if (FIT_FULL.test(x)) return "fullmind";
+  if (FIT_MEDIA.test(x) || URL_RE.test(raw)) return "simple";
+  return sizeOf(t) === "big" ? "wuwei" : "fullmind";
+};
+const linkOf = (t) => {
+  const m = ((t && t.text) || "").match(URL_RE);
+  return m ? m[1] : null;
+};
+const labelOf = (t) => ((t && t.text) || "").replace(URL_RE, "").replace(/\s{2,}/g, " ").trim() || (t && t.text) || "";
 
 const DEFAULTS = {
   checkins: [],
@@ -533,6 +557,7 @@ function App() {
   const [pathLevel, setPathLevel] = useState(0); // 0 Wu Wei · 1 Full Mind · 2 something simple · 3 the Nope stack
   const [pathAsk, setPathAsk] = useState(false); // "too big a lift": offering two minutes first
   const [pathClimb, setPathClimb] = useState(false); // something got done: offer a step up
+  const [pathSkip, setPathSkip] = useState(0); // "a different one" on the path
   const [pathState, setPathState] = useState(null); // state to log once the current change has saved
   const editStack = "off"; // the one Nope stack (stored under its old "home" key)
 
@@ -894,6 +919,7 @@ function App() {
 
   // ————— the path: moving between steps —————
   const pathStepDown = () => {
+    setPathSkip(0);
     setPathAsk(false);
     setPathClimb(false);
     const n = Math.min(3, pathLevel + 1);
@@ -906,6 +932,7 @@ function App() {
     setPathLevel(n);
   };
   const pathStepUp = () => {
+    setPathSkip(0);
     setPathAsk(false);
     setPathClimb(false);
     setPathLevel(Math.max(0, pathLevel - 1));
@@ -2209,6 +2236,7 @@ function App() {
       <button
         onClick={() => {
           if (id === "now") {
+            setPathSkip(0);
             setPathLevel(0);
             setPathAsk(false);
             setPathClimb(false);
@@ -2620,7 +2648,109 @@ function App() {
         ? "Rested and early — this is often your Wu Wei window. Begin with the biggest thing."
         : P.line;
     const urgentDeck = deckFor(deckKey, "nope");
-    const front = pathLevel <= 1 ? workTask(deckKey, P.state) : null;
+    // the recommendation: the best task whose words fit this step — urgent first, then important, dotted, oldest
+    const rank = (t) => (effImp(t) === "urgent" ? 0 : effImp(t) === "important" ? 1 : 2);
+    const picks =
+      pathLevel <= 2
+        ? freeOf(deckKey)
+            .filter((t) => fitOf(t) === ["wuwei", "fullmind", "simple"][pathLevel])
+            .sort(
+              (a, b) =>
+                rank(a) - rank(b) ||
+                (a.dot ? 0 : 1) - (b.dot ? 0 : 1) ||
+                (a.dot || 0) - (b.dot || 0) ||
+                (a.created || 0) - (b.created || 0)
+            )
+        : [];
+    const rec = picks.length ? picks[pathSkip % picks.length] : null;
+    const front = pathLevel <= 1 ? rec : null;
+    // urgents that don't fit this step still show, underneath
+    const pressing = freeOf(deckKey).filter((t) => effImp(t) === "urgent" && (!rec || t.id !== rec.id));
+    const TaskLine = (t, size) => {
+      const url = linkOf(t);
+      const st = { fontFamily: FONT.body, fontSize: size, fontWeight: 600, color: T.ink, lineHeight: 1.4 };
+      return url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1" style={{ ...st, textDecoration: "underline" }}>
+          {labelOf(t)}
+        </a>
+      ) : (
+        <span className="flex-1" style={st}>
+          {labelOf(t)}
+        </span>
+      );
+    };
+    const RecCard = (t, n, title) => {
+      const url = linkOf(t);
+      return (
+        <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${P.color}` }}>
+          <p style={{ ...mono(10, P.color) }}>
+            {title}
+            {n > 1 ? ` · ${(pathSkip % n) + 1} OF ${n}` : ""}
+          </p>
+          {editTaskId === t.id && editFrom === "deck" ? (
+            TaskEditorFor(deckKey)
+          ) : (
+            <>
+              <div className="flex items-start gap-2 mt-2">
+                <span className="shrink-0 mt-1">{tierGlyph(t)}</span>
+                {TaskLine(t, 17)}
+                <button onClick={() => startTaskEdit(t)} className="shrink-0" style={{ ...mono(11, T.rubric), background: "transparent" }}>
+                  ✎
+                </button>
+              </div>
+              {url && (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2 mt-3 text-center"
+                  style={{ ...btnInk, display: "block", textDecoration: "none" }}
+                >
+                  OPEN IT ▸
+                </a>
+              )}
+              {!url && fitOf(t) === "simple" && (
+                <p className="mt-2" style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
+                  No link yet. Tap ✎ and paste it in, so one tap takes you straight to it.
+                </p>
+              )}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => {
+                    resolveTask(deckKey, t.id, "later");
+                    pathOnAct("later");
+                    setPathSkip(0);
+                  }}
+                  className="flex-1 py-2"
+                  style={btnFmOutline}
+                >
+                  ↻ LATER
+                </button>
+                <button onClick={() => pathDoor(labelOf(t))} className="flex-1 py-2" style={btnWwOutline}>
+                  TWO MINUTES
+                </button>
+                <button
+                  onClick={() => {
+                    resolveTask(deckKey, t.id, "done");
+                    pathOnAct("done");
+                    setPathSkip(0);
+                  }}
+                  className="px-3 py-2 shrink-0"
+                  style={btnWw}
+                >
+                  DONE ✓
+                </button>
+              </div>
+              {n > 1 && (
+                <button onClick={() => setPathSkip(pathSkip + 1)} className="w-full py-2 mt-2" style={btnGhost}>
+                  A DIFFERENT ONE ▸
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      );
+    };
     const current = data.checkins.find((c) => c.id === activeCheckin);
     const tried = current ? current.tried || [] : [];
     // step iii: one small thing
@@ -2689,8 +2819,37 @@ function App() {
           </div>
         )}
 
-        {pathLevel <= 1 && DeckPanel(deckKey, P.state, pathOnAct)}
-        {pathLevel >= 2 && urgentDeck.length > 0 && DeckPanel(deckKey, "nope", pathOnAct)}
+        {pathLevel <= 1 &&
+          (rec ? (
+            RecCard(rec, picks.length, "THE NEXT THING")
+          ) : (
+            <div className="px-4 py-4 mb-3" style={{ ...card, borderLeft: `4px solid ${P.color}` }}>
+              <p style={{ fontFamily: FONT.body, fontStyle: "italic", fontSize: 13.5, color: T.sub }}>
+                Nothing on the list fits {P.name} right now.
+              </p>
+            </div>
+          ))}
+        {pressing.length > 0 && (
+          <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
+            <p style={{ ...mono(9, T.np) }}>ALSO PRESSING</p>
+            {pressing.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 mt-2">
+                <span className="shrink-0">{tierGlyph(t)}</span>
+                {TaskLine(t, 13.5)}
+                <button
+                  onClick={() => {
+                    resolveTask(deckKey, t.id, "done");
+                    pathOnAct("done");
+                  }}
+                  className="shrink-0 px-2 py-1"
+                  style={btnWw}
+                >
+                  DONE ✓
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {pathLevel === 2 && (
           <div className="flex flex-col gap-3">
@@ -2704,32 +2863,7 @@ function App() {
                 ))}
               </div>
             </div>
-            {tiny && (
-              <div className="px-4 py-4" style={{ ...card, borderLeft: `4px solid ${T.fm}` }}>
-                <p style={{ ...mono(9) }}>OR ONE SMALL THING</p>
-                <div className="flex items-start gap-2 mt-1">
-                  <span className="shrink-0 mt-1">{tierGlyph(tiny)}</span>
-                  <p className="flex-1" style={{ fontFamily: FONT.body, fontSize: 15.5, fontWeight: 600, color: T.ink, lineHeight: 1.4 }}>
-                    {tiny.text}
-                  </p>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => pathDoor(tiny.text)} className="flex-1 py-2" style={btnFmOutline}>
-                    TWO MINUTES
-                  </button>
-                  <button
-                    onClick={() => {
-                      resolveTask(deckKey, tiny.id, "done");
-                      pathOnAct("done");
-                    }}
-                    className="flex-1 py-2"
-                    style={btnWw}
-                  >
-                    DONE ✓
-                  </button>
-                </div>
-              </div>
-            )}
+            {rec && RecCard(rec, picks.length, "OR ONE SIMPLE THING")}
           </div>
         )}
 
