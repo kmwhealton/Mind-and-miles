@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261124-054229 -->
+<!-- build 20261125-175233 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -1435,9 +1435,12 @@ function App() {
             ...free.filter((t) => sizeOf(t) === "big" && effImp(t) === "normal"),
           ];
       deck = fill([...urg], bigs, slots);
+      fill(deck, [...poolFor(key, "small"), ...free.filter((t) => sizeOf(t) === "small" && effImp(t) === "normal")], slots);
     } else {
       const slots = Math.max(3, urg.length);
       deck = fill([...urg], fromChain(key, "small"), slots);
+      // a slot freed by Later (or a short chain) refills: other important small tasks, then normal ones
+      fill(deck, [...poolFor(key, "small"), ...free.filter((t) => sizeOf(t) === "small" && effImp(t) === "normal")], slots);
       const r = randoFor(key);
       if (r && !deck.some((d) => d.id === r.id)) deck.push({ ...r, slot: "rando" });
     }
