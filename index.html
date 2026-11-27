@@ -12,7 +12,7 @@
 <link rel="manifest" href="./manifest.json?v=3">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
-<!-- build 20261125-175233 -->
+<!-- build 20261127-084819 -->
 <style>
 *,*::before,*::after{box-sizing:border-box}body{margin:0}button{font:inherit;border:none;cursor:pointer;padding:0}input,textarea{font:inherit}img,svg{display:block;max-width:100%}
 .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
@@ -2668,7 +2668,13 @@ function App() {
     const rec = picks.length ? picks[pathSkip % picks.length] : null;
     const front = pathLevel <= 1 ? rec : null;
     // urgents that don't fit this step still show, underneath
-    const pressing = freeOf(deckKey).filter((t) => effImp(t) === "urgent" && (!rec || t.id !== rec.id));
+    // everything else worth seeing: all urgents, then the other tasks that fit this step (up to 6 rows)
+    const pressing = [
+      ...freeOf(deckKey).filter((t) => effImp(t) === "urgent"),
+      ...picks.filter((t) => effImp(t) !== "urgent"),
+    ]
+      .filter((t, i, a) => (!rec || t.id !== rec.id) && a.findIndex((x) => x.id === t.id) === i)
+      .slice(0, 6);
     const TaskLine = (t, size) => {
       const url = linkOf(t);
       const st = { fontFamily: FONT.body, fontSize: size, fontWeight: 600, color: T.ink, lineHeight: 1.4 };
@@ -2835,22 +2841,47 @@ function App() {
         {pressing.length > 0 && (
           <div className="px-4 py-3 mb-3" style={{ ...card, borderLeft: `4px solid ${T.np}` }}>
             <p style={{ ...mono(9, T.np) }}>ALSO PRESSING</p>
-            {pressing.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 mt-2">
-                <span className="shrink-0">{tierGlyph(t)}</span>
-                {TaskLine(t, 13.5)}
-                <button
-                  onClick={() => {
-                    resolveTask(deckKey, t.id, "done");
-                    pathOnAct("done");
-                  }}
-                  className="shrink-0 px-2 py-1"
-                  style={btnWw}
-                >
-                  DONE ✓
-                </button>
-              </div>
-            ))}
+            {pressing.map((t) => {
+              const small = { ...mono(9), background: "transparent", padding: "4px 5px" };
+              return (
+                <div key={t.id} className="mt-2" style={{ borderTop: `1px solid ${T.lineSoft}`, paddingTop: 8 }}>
+                  <div className="flex items-start gap-2">
+                    <span className="shrink-0 mt-1">{tierGlyph(t)}</span>
+                    {TaskLine(t, 13.5)}
+                    {t.dot && <span style={{ ...mono(9) }}>●</span>}
+                  </div>
+                  {editTaskId === t.id && editFrom === "deck" ? (
+                    TaskEditorFor(deckKey)
+                  ) : (
+                    <div className="flex items-center gap-2 mt-1" style={{ flexWrap: "wrap", paddingLeft: 18 }}>
+                      <button
+                        onClick={() => {
+                          resolveTask(deckKey, t.id, "done");
+                          pathOnAct("done");
+                        }}
+                        style={{ ...small, color: T.ww }}
+                      >
+                        DONE ✓
+                      </button>
+                      <button onClick={() => resolveTask(deckKey, t.id, "later")} style={{ ...small, color: T.fm }}>
+                        ↻ LATER
+                      </button>
+                      {(t.dot || effImp(t) === "important") && (
+                        <button onClick={() => dotToggle(deckKey, t.id)} style={small}>
+                          {t.dot ? "UN-DOT" : "● DOT"}
+                        </button>
+                      )}
+                      <button onClick={() => startTaskEdit(t)} style={{ ...small, color: T.rubric }}>
+                        ✎ EDIT
+                      </button>
+                      <button onClick={() => deleteTask(deckKey, t.id)} style={small}>
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
